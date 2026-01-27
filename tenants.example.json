@@ -1,0 +1,19 @@
+{
+  "tenants": [
+    {
+      "name": "my-team",
+      "linearTeamId": "TEAM_ID_HERE",
+      "repoPath": "/absolute/path/to/your/repo",
+      "maxConcurrentAgents": 2,
+      "githubRepo": "your-org/your-repo",
+      "notifications": [
+        {
+          "type": "slack",
+          "config": {
+            "webhookUrl": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+          }
+        }
+      ]
+    }
+  ]
+}

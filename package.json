@@ -7,6 +7,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "setup": "ts-node scripts/setup.ts",
     "build": "tsc",
     "start": "ts-node src/server/index.ts",
     "watch": "LINEAR_POLLING_INTERVAL_MS=30000 ts-node src/server/index.ts",

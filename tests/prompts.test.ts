@@ -6,6 +6,11 @@ const emptyMemory = {
   commonErrors: [],
   fileStructure: '',
   lastUpdated: new Date(),
+  categorizedErrors: [],
+  filePatterns: [],
+  validationHistory: [],
+  successfulTickets: 0,
+  failedTickets: 0,
 };
 
 // Mock the memory module before importing prompts

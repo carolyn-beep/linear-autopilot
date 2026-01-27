@@ -294,9 +294,33 @@ class Spawner {
     }
 
     await notify(createAgentCompletedEvent(ticket, tenant, branchName, duration));
+
+    // Get modified files for memory tracking
+    const modifiedFiles = this.getModifiedFiles(tenant.repoPath, branchName);
+
     updateMemory(tenant.repoPath, {
       learnings: [`Completed ${ticket.identifier}: ${ticket.title}`],
+      ticketTitle: ticket.title,
+      modifiedFiles,
+      validationResults: validation.results.map((r) => ({
+        step: r.name,
+        passed: r.passed,
+        output: r.output,
+      })),
+      success: true,
     });
+  }
+
+  private getModifiedFiles(repoPath: string, branchName: string): string[] {
+    try {
+      const result = execSync(`git diff --name-only main...${branchName}`, {
+        cwd: repoPath,
+        encoding: 'utf-8',
+      });
+      return result.trim().split('\n').filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 
   private async handleFailure(
@@ -332,7 +356,11 @@ class Spawner {
       );
 
       await updateTicketStatus(ticket, 'Backlog');
-      updateMemory(tenant.repoPath, { errors: [errorMessage] });
+      updateMemory(tenant.repoPath, {
+        errors: [errorMessage],
+        ticketTitle: ticket.title,
+        success: false,
+      });
       ticketQueue.requeue(item);
     } catch (error) {
       logger.error('Error in failure handling', {
