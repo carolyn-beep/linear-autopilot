@@ -43,6 +43,13 @@ export default tseslint.config(
   },
   {
     files: ['**/*.test.ts', 'tests/**/*.ts'],
+    // Test files are excluded from tsconfig, so they cannot use type-aware
+    // linting (which requires the file be part of the TS project).
+    languageOptions: {
+      parserOptions: {
+        project: false,
+      },
+    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
