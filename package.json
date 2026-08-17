@@ -2,6 +2,8 @@
   "name": "linear-autopilot",
   "version": "1.0.0",
   "description": "Autonomous agents that work your Linear tickets while you sleep.",
+  "author": "Carolyn Driscoll",
+  "license": "MIT",
   "main": "dist/server/index.js",
   "engines": {
     "node": ">=20.0.0"
