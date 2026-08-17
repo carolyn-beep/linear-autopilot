@@ -1,8 +1,8 @@
-import { spawn, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { ticketQueue, QueuedTicket } from './queue';
 import { TenantConfig } from '../config/tenants';
 import { LinearTicket, updateTicketStatus, addComment } from '../linear';
-import { buildAutopilotPrompt } from '../prompts';
+import { createRunner } from '../runners';
 import { updateMemory } from '../memory';
 import {
   notify,
@@ -151,18 +151,28 @@ class Spawner {
       // Notify: agent started
       await notify(createAgentStartedEvent(ticket, tenant, branchName));
 
-      // Run Claude Code
-      const prompt = buildAutopilotPrompt({
-        ticket,
-        repoPath: tenant.repoPath,
-        branchName,
-        includeMemory: true,
-      });
-
-      const result = await this.runClaudeCode(prompt, tenant.repoPath);
+      // Run the tenant's configured runner (single agent, or the multi-role
+      // planner -> implementer -> reviewer pipeline). Default is single-agent,
+      // preserving the classic behavior exactly.
+      const runner = createRunner(tenant);
+      const result = await runner.run({ ticket, tenant, branchName });
       const duration = Date.now() - startTime;
 
-      // Record token usage for cost tracking
+      if (result.roleResults && result.roleResults.length > 1) {
+        logger.info('Runner role breakdown', {
+          ticketId: ticket.identifier,
+          tenant: tenant.name,
+          runner: tenant.runner ?? 'single',
+          roles: result.roleResults.map((r) => ({
+            role: r.role,
+            tokens: r.tokens,
+            costUsd: r.costUsd,
+            durationMs: r.durationMs,
+          })),
+        });
+      }
+
+      // Record token usage for cost tracking (one aggregate record per ticket).
       recordUsage(tenant.repoPath, ticket.identifier, result.output, tenant.name);
 
       if (result.success) {
@@ -173,7 +183,7 @@ class Spawner {
           tenant,
           item,
           branchName,
-          'Claude Code exited with errors'
+          result.summary || 'Claude Code exited with errors'
         );
       }
     } catch (error) {
@@ -182,43 +192,6 @@ class Spawner {
     } finally {
       this.activeAgents.delete(ticket.identifier);
     }
-  }
-
-  private runClaudeCode(
-    prompt: string,
-    repoPath: string
-  ): Promise<{ success: boolean; output: string }> {
-    return new Promise((resolve) => {
-      const claude = spawn('claude', ['-p', '--dangerously-skip-permissions', prompt], {
-        cwd: repoPath,
-        stdio: ['inherit', 'pipe', 'pipe'],
-        // Scrub secrets so agent-authored code can't read our credentials.
-        env: scrubbedEnv(),
-      });
-
-      let output = '';
-
-      claude.stdout?.on('data', (data: Buffer) => {
-        const text = data.toString();
-        output += text;
-        process.stdout.write(data);
-      });
-
-      claude.stderr?.on('data', (data: Buffer) => {
-        const text = data.toString();
-        output += text;
-        process.stderr.write(data);
-      });
-
-      claude.on('close', (code) => {
-        resolve({ success: code === 0, output });
-      });
-
-      claude.on('error', (err) => {
-        logger.error('Failed to spawn Claude Code', { error: err.message });
-        resolve({ success: false, output });
-      });
-    });
   }
 
   private async handleSuccess(

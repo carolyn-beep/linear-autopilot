@@ -21,6 +21,17 @@ export interface TenantConfig {
    * environment variable when omitted.
    */
   githubToken?: string;
+  /**
+   * Which runner strategy to use for this tenant. `'single'` (the default) runs
+   * one Claude Code agent per ticket — the classic behavior. `'pipeline'` runs
+   * the sequential planner -> implementer -> reviewer pipeline.
+   */
+  runner?: 'single' | 'pipeline';
+  /**
+   * Max reviewer-driven revision passes for the pipeline runner. Defaults to 1.
+   * The pipeline always terminates at this cap. Ignored by the single runner.
+   */
+  pipelineMaxRevisions?: number;
 }
 
 interface TenantsFile {
