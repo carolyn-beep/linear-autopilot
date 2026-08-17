@@ -12,8 +12,8 @@ Linear Autopilot watches your Linear board for tickets labeled `agent-ready`, sp
 - **Cross-Session Learning** — Agents remember codebase patterns, common errors, and which files to modify for similar tickets
 - **Multi-Tenant Support** — Manage multiple teams and repositories from a single instance
 - **Validation Pipeline** — Automatically runs tests, linting, type checking, and coverage checks before creating PRs
-- **Smart Retries** — Failed tickets are requeued with exponential backoff (up to 3 attempts)
-- **Real-Time Dashboard** — Monitor queue, active agents, completions, and costs at a glance
+- **Smart Retries** — Failed tickets are requeued (up to 3 attempts); exponential backoff on Linear API calls
+- **Auto-Refreshing Dashboard** — Monitor queue, active agents, completions, and costs (refreshes every 30s)
 - **Flexible Notifications** — Slack, Discord, Email, SMS, WhatsApp, or Google Chat alerts
 - **Cost Tracking** — Track token usage and estimated costs per ticket
 - **Rate Limiting** — Built-in rate limiting and retry logic for Linear API
@@ -54,7 +54,7 @@ Linear Autopilot watches your Linear board for tickets labeled `agent-ready`, sp
 ### Installation
 
 ```bash
-git clone https://github.com/carolyndriscoll-trilogy/linear-autopilot.git
+git clone https://github.com/carolyn-beep/linear-autopilot.git
 cd linear-autopilot
 npm install
 ```
@@ -168,14 +168,16 @@ Open http://localhost:3000/dashboard to view the dashboard.
 
 Each tenant in `tenants.json` supports:
 
-| Field                 | Description                         |
-| --------------------- | ----------------------------------- |
-| `name`                | Display name for the tenant         |
-| `linearTeamId`        | Linear team ID                      |
-| `repoPath`            | Absolute path to the repository     |
-| `maxConcurrentAgents` | Max parallel agents for this tenant |
-| `githubRepo`          | GitHub repo in `org/repo` format    |
-| `notifications`       | Array of notification configs       |
+| Field                 | Description                                                         |
+| --------------------- | ------------------------------------------------------------------- |
+| `name`                | Display name for the tenant                                         |
+| `linearTeamId`        | Linear team ID                                                      |
+| `repoPath`            | Absolute path to the repository                                     |
+| `maxConcurrentAgents` | Max parallel agents for this tenant                                 |
+| `githubRepo`          | GitHub repo in `org/repo` format                                    |
+| `notifications`       | Array of notification configs                                       |
+| `githubToken`         | Optional per-tenant GitHub token (falls back to `GITHUB_TOKEN`)     |
+| `linearApiKey`        | Optional per-tenant Linear API key (falls back to `LINEAR_API_KEY`) |
 
 ### Notification Providers
 
@@ -191,6 +193,9 @@ Each tenant in `tenants.json` supports:
 
 // SMS (Twilio)
 { "type": "sms", "config": { "accountSid": "AC...", "authToken": "...", "from": "+1...", "to": "+1..." } }
+
+// WhatsApp (Twilio)
+{ "type": "whatsapp", "config": { "accountSid": "AC...", "authToken": "...", "from": "whatsapp:+1...", "to": "whatsapp:+1..." } }
 
 // Google Chat
 { "type": "gchat", "config": { "webhookUrl": "https://chat.googleapis.com/..." } }
@@ -280,6 +285,10 @@ Autopilot tracks token usage from Claude Code output and estimates costs:
 - Stored in `.linear-autopilot/costs.json` per repository
 - Visible in the dashboard
 - Available via `/dashboard/api/costs`
+
+> **Note:** Costs are an approximate estimate based on configurable per-token
+> pricing constants. Actual billing depends on the model and current Anthropic
+> pricing — treat these figures as a rough guide, not an invoice.
 
 ## License
 

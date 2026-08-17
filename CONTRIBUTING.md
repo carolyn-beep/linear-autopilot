@@ -53,13 +53,13 @@ Please be respectful and constructive in all interactions. We're building someth
 ### Reporting Bugs
 
 - Check existing issues first to avoid duplicates
-- Use the bug report template
+- Open an issue describing the bug
 - Include reproduction steps, expected vs actual behavior
 - Include your environment details (Node version, OS, etc.)
 
 ### Suggesting Features
 
-- Open an issue with the feature request template
+- Open an issue describing the feature request
 - Describe the use case and expected behavior
 - Be open to discussion about implementation approaches
 
@@ -107,7 +107,7 @@ Please be respectful and constructive in all interactions. We're building someth
 
 - Link related issues in the PR description
 - Keep PRs focused — one feature or fix per PR
-- Ensure CI passes before requesting review
+- Run `npm run lint`, `npm run typecheck`, and `npm test` locally before pushing
 - Be responsive to review feedback
 
 ## Project Structure
@@ -144,14 +144,15 @@ npm run test:coverage       # With coverage report
 
 ### Coverage Requirements
 
-All PRs must maintain a minimum **70% coverage** threshold for:
+Please maintain the minimum **70% coverage** threshold for:
 
 - Statements
 - Branches
 - Functions
 - Lines
 
-The CI will fail if coverage drops below this threshold.
+`npm run test:coverage` enforces this locally and will fail if coverage drops
+below the threshold, so run it before pushing.
 
 ## Code Style
 
