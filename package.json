@@ -13,6 +13,7 @@
     "watch": "LINEAR_POLLING_INTERVAL_MS=30000 ts-node src/server/index.ts",
     "dev": "tsx watch src/index.ts",
     "runner": "ts-node src/runner.ts",
+    "mcp": "ts-node src/mcp/server.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
@@ -22,7 +23,9 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "express": "^4.18.0"
+    "@modelcontextprotocol/sdk": "^1.13.1",
+    "express": "^4.18.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
