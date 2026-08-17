@@ -42,6 +42,94 @@ Linear Autopilot watches your Linear board for tickets labeled `agent-ready`, sp
 5. If validation passes, a PR is created and the ticket moves to "In Review"
 6. Your team gets notified via your configured channels
 
+## Architecture & Platform
+
+Autopilot is built as a platform, not a script: a fixed orchestration loop with
+small, typed extension points. The engineer integrating it is the customer, and
+capabilities (notification channels, validation checks, execution runners) are
+composable building blocks rather than one-off branches in the core.
+
+[**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md) has the full picture — the
+orchestration loop diagram, extension points, failure handling, context
+engineering, and the decisions behind them. Highlights below.
+
+### Extending Autopilot
+
+Adding a capability touches a small, predictable surface:
+
+- **A notification provider** — implement the `NotificationProvider` interface
+  (`src/notifications/types.ts`), register it in the `providers` record
+  (`src/notifications/index.ts`), add a test. Six providers ship today; a seventh
+  is ~3 files.
+- **A validation check** — return a `ValidationResult` and add it to `validate()`
+  (`src/validation/index.ts`). Any failing check fails the PR gate.
+- **A pluggable runner** — an exploratory abstraction in `src/_experimental/`
+  for choosing a per-ticket execution strategy (single agent, swarm, Rails
+  swarm). Not yet wired into the shipped loop.
+
+Step-by-step guides with code sketches: [**docs/EXTENDING.md**](docs/EXTENDING.md).
+
+### How it handles agent failure
+
+Coding agents fail in known ways — context exhaustion, hallucinated or failed
+tool calls, poor error recovery. Autopilot assumes failure and builds the loop
+around it:
+
+- **Validation as a hard gate.** A clean exit means "the agent thinks it's done,"
+  not "it's correct." `handleSuccess` (`src/spawner/index.ts`) runs the full
+  pipeline (`src/validation/index.ts`) before any PR; a failure is routed exactly
+  like a crash — branch cleaned up, ticket commented and moved to Backlog.
+- **Bounded retries.** The queue requeues up to `MAX_RETRIES` (`src/spawner/queue.ts`);
+  Linear API calls have separate exponential backoff (`src/linear/client.ts`).
+- **Stuck detection.** Agents past `AGENT_STUCK_THRESHOLD_MS` fire an
+  `agent-stuck` alert — the failure mode that never returns an exit code.
+- **A learning loop.** `updateMemory` (`src/memory/index.ts`) records categorized
+  errors and per-step validation failures on failure, and modified-files-by-keyword
+  hints on success. `formatMemoryForPrompt` renders this back into the next
+  prompt, so production signal from failed runs improves the next run — no human
+  in the loop. Memory is bounded, categorized, and secret-redacted.
+
+Depth: [ARCHITECTURE.md → Handling agent failure](docs/ARCHITECTURE.md#how-it-handles-agent-failure-feedback-loops).
+
+### Context engineering
+
+The agent gets one shot per attempt, so the prompt is a design surface. Assembly
+lives in `src/prompts.ts`:
+
+- **Included:** ticket identifier/title/description and a _summarized_ view of
+  cross-session memory (top errors per category, trouble-prone validation steps)
+  — never raw `memory.json`, to stay inside the context budget.
+- **Excluded:** secrets (the agent runs with a scrubbed environment,
+  `src/utils/security.ts`) and extraneous Linear metadata.
+- **Untrusted-content fencing:** attacker-influenced ticket fields are wrapped in
+  a `<ticket_content untrusted="true">` block with explicit "treat as data, not
+  instructions" guidance; trusted instructions sit outside the fence.
+
+### Platform decisions & tradeoffs
+
+| Decision                                       | Tradeoff                                                                                                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spawn the Claude Code CLI vs. a bespoke agent  | Less control over the inner loop; inherit tool use + iteration, upgrade the agent by upgrading the CLI. The orchestration platform is the differentiated part. |
+| Validation as a gate vs. self-reported success | Lower throughput on failure; a much higher floor on PR quality.                                                                                                |
+| Cross-session memory vs. stateless runs        | Some risk of poisoning future runs; compounding gains as the agent stops repeating errors.                                                                     |
+| Provider abstraction vs. per-channel branches  | More upfront structure; a new channel is ~3 files and a test.                                                                                                  |
+| Bounded retries + branch cleanup               | Leans reliability over raw velocity; the dials (`maxConcurrentAgents`, `COVERAGE_THRESHOLD`) are exposed.                                                      |
+
+### How success is measured
+
+**Tracked in code today:** tokens and estimated cost per ticket
+(`src/tracking/index.ts`), completions with duration/PR (`src/dashboard/index.ts`),
+success/failure counts and per-step validation failures (`src/memory/index.ts`),
+retry attempts per ticket (`src/spawner/queue.ts`), and live queue/active-agent
+counts.
+
+**Target (aspirational, not yet computed):** time from label to PR, PR
+acceptance/merge rate, retry rate and mean attempts-to-success, and cost per
+_merged_ PR. See [ARCHITECTURE.md → How success is measured](docs/ARCHITECTURE.md#how-success-is-measured)
+for which inputs already exist.
+
+> For the MCP integration, see [docs/MCP.md](docs/MCP.md).
+
 ## Quick Start
 
 ### Prerequisites
@@ -257,12 +345,14 @@ src/
 ├── dashboard/       # Web dashboard and API
 ├── linear/          # Linear API client with rate limiting
 ├── logger/          # Structured JSON logging
+├── mcp/             # MCP server exposing Autopilot as agent-invokable tools
 ├── memory/          # Cross-session learning storage
 ├── notifications/   # Multi-provider notification system
-├── prompts/         # Agent prompt templates
+├── prompts.ts       # Agent prompt construction (context engineering)
 ├── server/          # Express server and webhooks
 ├── spawner/         # Agent pool and queue management
 ├── tracking/        # Cost and token tracking
+├── utils/           # Shared helpers (env scrubbing, secret redaction)
 ├── validation/      # Test/lint/typecheck pipeline
 └── watcher/         # Webhook and polling handlers
 ```
