@@ -45,6 +45,3 @@ Every ADR follows the same structure:
 | [0004](0004-security-posture.md)              | Security posture for a code-executing agent              | Accepted |
 | [0005](0005-multi-tenant-credential-model.md) | Multi-tenant credential model with optional overrides    | Proposed |
 | [0006](0006-mcp-read-only-surface.md)         | Expose the platform over a read-only MCP surface         | Accepted |
-
-</content>
-</invoke>

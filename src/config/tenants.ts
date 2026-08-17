@@ -21,11 +21,6 @@ export interface TenantConfig {
    * environment variable when omitted.
    */
   githubToken?: string;
-  /**
-   * Optional per-tenant Linear API key. Falls back to the global
-   * `LINEAR_API_KEY` environment variable when omitted.
-   */
-  linearApiKey?: string;
 }
 
 interface TenantsFile {

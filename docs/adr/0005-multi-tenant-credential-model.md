@@ -65,4 +65,3 @@ wired end-to-end, the client authenticates with the global `config.linearApiKey`
   rejected — this ADR is the staging toward it.
 - **Single-tenant only.** Sidesteps the problem by dropping multi-tenancy, which
   is a core requirement. Rejected.
-  </content>

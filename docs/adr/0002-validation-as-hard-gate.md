@@ -63,4 +63,3 @@ not support.
   favor of gating before the PR exists.
 - **A soft gate (warn but proceed).** Preserves throughput but reintroduces the
   exact silent-bad-output problem the gate is meant to remove. Rejected.
-  </content>

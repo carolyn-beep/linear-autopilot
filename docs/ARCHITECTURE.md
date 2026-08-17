@@ -188,9 +188,11 @@ per tenant, `COVERAGE_THRESHOLD`, `AGENT_STUCK_THRESHOLD_MS`.
 `if (type === 'slack')` branches. Six providers exist today; adding a seventh
 touches one file plus a test. See [EXTENDING.md](EXTENDING.md).
 
-**Per-tenant credential scoping.** Optional per-tenant `githubToken` /
-`linearApiKey` (`src/config/tenants.ts`) limit blast radius so one tenant's
-compromised token doesn't reach another tenant's repo.
+**Per-tenant credential scoping.** An optional per-tenant `githubToken`
+(`src/config/tenants.ts`) scopes PR creation to one tenant's token, limiting
+blast radius. Per-tenant Linear keys are a documented next step (see
+[ADR-0005](adr/0005-multi-tenant-credential-model.md)); the Linear client
+currently authenticates with the global key.
 
 ## How success is measured
 

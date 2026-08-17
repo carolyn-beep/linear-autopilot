@@ -66,4 +66,3 @@ ADR 0004).
 - **Inject the raw memory file.** Maximum recall, but blows the context budget
   and enlarges the untrusted/secret surface. Rejected in favor of the summarized
   view.
-  </content>

@@ -60,4 +60,3 @@ stdout clean for the protocol (diagnostics go to stderr).
 - **Write-enabled MCP from the start.** Powerful, but exposes state-changing
   actions to any connected agent before the authorization and guardrail story is
   settled. Deferred: read-only first, write later behind explicit controls.
-  </content>

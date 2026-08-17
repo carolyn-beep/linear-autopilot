@@ -68,4 +68,3 @@ Adopt a defense-in-depth posture, fail-closed where a control is missing:
 - **Sanitize/strip ticket text instead of fencing.** Lossy and brittle — strips
   legitimate task detail while never being complete. Fencing plus argv-passing
   preserves the content and neutralizes it. Rejected.
-  </content>

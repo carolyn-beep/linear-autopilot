@@ -60,4 +60,3 @@ validation, PR creation, memory — is Autopilot's, not the agent's.
 - **Multi-agent runner strategies** (planner/coder/reviewer swarms) are sketched
   in `src/_experimental/runners` but are explicitly not wired in
   (`src/_experimental/README.md`); the shipped path is a single CLI process.
-  </content>

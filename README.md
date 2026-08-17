@@ -128,7 +128,19 @@ acceptance/merge rate, retry rate and mean attempts-to-success, and cost per
 _merged_ PR. See [ARCHITECTURE.md → How success is measured](docs/ARCHITECTURE.md#how-success-is-measured)
 for which inputs already exist.
 
-> For the MCP integration, see [docs/MCP.md](docs/MCP.md).
+### Deeper reading
+
+The thinking behind the system, for those evaluating the engineering:
+
+- [docs/DESIGN.md](docs/DESIGN.md) — problem, goals and non-goals, principles, risks, roadmap.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — orchestration loop, extension points, failure handling, context engineering.
+- [docs/adr/](docs/adr/) — architecture decision records (the tradeoffs and the alternatives considered).
+- [docs/EVALUATION.md](docs/EVALUATION.md) — how agent-orchestration quality is measured; run the offline harness with `npm run eval`.
+- [docs/EXTENDING.md](docs/EXTENDING.md) — adding a notification provider / validation check / runner.
+- [docs/MCP.md](docs/MCP.md) — the MCP server and how to connect an agent to it.
+- [docs/agentic-orchestration-notes.md](docs/agentic-orchestration-notes.md) — a POV on why agents fail and which patterns generalize.
+- [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — deliberate non-goals and known edges.
+- [SECURITY.md](SECURITY.md) — threat model and reporting.
 
 ## Quick Start
 
@@ -256,16 +268,15 @@ Open http://localhost:3000/dashboard to view the dashboard.
 
 Each tenant in `tenants.json` supports:
 
-| Field                 | Description                                                         |
-| --------------------- | ------------------------------------------------------------------- |
-| `name`                | Display name for the tenant                                         |
-| `linearTeamId`        | Linear team ID                                                      |
-| `repoPath`            | Absolute path to the repository                                     |
-| `maxConcurrentAgents` | Max parallel agents for this tenant                                 |
-| `githubRepo`          | GitHub repo in `org/repo` format                                    |
-| `notifications`       | Array of notification configs                                       |
-| `githubToken`         | Optional per-tenant GitHub token (falls back to `GITHUB_TOKEN`)     |
-| `linearApiKey`        | Optional per-tenant Linear API key (falls back to `LINEAR_API_KEY`) |
+| Field                 | Description                                                     |
+| --------------------- | --------------------------------------------------------------- |
+| `name`                | Display name for the tenant                                     |
+| `linearTeamId`        | Linear team ID                                                  |
+| `repoPath`            | Absolute path to the repository                                 |
+| `maxConcurrentAgents` | Max parallel agents for this tenant                             |
+| `githubRepo`          | GitHub repo in `org/repo` format                                |
+| `notifications`       | Array of notification configs                                   |
+| `githubToken`         | Optional per-tenant GitHub token (falls back to `GITHUB_TOKEN`) |
 
 ### Notification Providers
 
@@ -397,7 +408,7 @@ Linear Autopilot executes AI-generated code and runs shell commands derived from
 | Unauthenticated webhook triggering           | The webhook **fails closed** without `LINEAR_WEBHOOK_SECRET`, verifies HMAC signatures in constant time (`timingSafeEqual`), and rejects stale timestamps (replay protection) |
 | Dashboard / health exposure                  | Dashboard and detailed health are gated behind an optional `DASHBOARD_TOKEN`; unauthenticated `/health` returns a minimal status only                                         |
 | SSRF via notification URLs                   | Notification webhook URLs are validated (https-only, provider allowlist, private/loopback/metadata ranges blocked)                                                            |
-| Blast radius across tenants                  | Optional per-tenant `githubToken` / `linearApiKey` scope credentials to a single tenant                                                                                       |
+| Blast radius across tenants                  | Optional per-tenant `githubToken` scopes PR-creation to a single tenant's token (per-tenant Linear key is roadmap)                                                            |
 | Container blast radius                       | The Docker image runs as a non-root user                                                                                                                                      |
 
 **Operational requirement — sandbox the execution.** These controls reduce, but do not eliminate, the inherent risk of running a coding agent. **Run Autopilot in an isolated environment** (a dedicated container/VM with no ambient cloud credentials, least-privilege tokens, a protected `main` branch, and restricted network egress). Treat that isolation as required, not optional. See [SECURITY.md](SECURITY.md) for details and how to report a vulnerability.
