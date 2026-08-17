@@ -58,15 +58,61 @@ Concretely:
 The loop is fixed; the capabilities plugged into it are not. The extension
 points, from most to least mature:
 
-| Point                    | Where                            | Shape                                                   | Status                    |
-| ------------------------ | -------------------------------- | ------------------------------------------------------- | ------------------------- |
-| Notification providers   | `src/notifications`              | `NotificationProvider` interface + `providers` record   | Shipped, 6 providers      |
-| Validation checks        | `src/validation/index.ts`        | `ValidationResult`-returning step added to `validate()` | Shipped                   |
-| Notification events      | `src/notifications/types.ts`     | `NotificationEvent` union + event factory               | Shipped                   |
-| Pluggable runners        | `src/_experimental/runners`      | `selectRunner()` returning a `RunnerType`               | Exploratory, not wired in |
-| Multi-agent coordination | `src/_experimental/coordination` | MCP client/manager                                      | Exploratory, not wired in |
+| Point                  | Where                        | Shape                                                   | Status                      |
+| ---------------------- | ---------------------------- | ------------------------------------------------------- | --------------------------- |
+| Notification providers | `src/notifications`          | `NotificationProvider` interface + `providers` record   | Shipped, 6 providers        |
+| Validation checks      | `src/validation/index.ts`    | `ValidationResult`-returning step added to `validate()` | Shipped                     |
+| Notification events    | `src/notifications/types.ts` | `NotificationEvent` union + event factory               | Shipped                     |
+| Runner strategy        | `src/runners`                | `AgentRunner` interface + `createRunner(tenant)`        | Shipped, 2 runners (opt-in) |
 
 See [EXTENDING.md](EXTENDING.md) for the how-to on each.
+
+## Runner abstraction
+
+How a ticket gets implemented sits behind one interface, `AgentRunner`
+(`src/runners/types.ts`), so the spawner can pick a strategy per tenant without
+knowing the details. The spawner calls `createRunner(tenant).run(...)`
+(`src/runners/index.ts`, `src/spawner/index.ts`); everything downstream — the
+validation gate, PR creation, memory — is identical regardless of which runner
+ran. The agent invocation itself is injected (`InvokeAgent`), and the one place a
+real `claude` process is spawned is `src/runners/invoke.ts` (safe argv `spawn`
+with a scrubbed environment), which keeps runners unit-testable without the CLI.
+
+Two runners ship:
+
+- **`SingleAgentRunner`** (`src/runners/single-agent-runner.ts`) is the default
+  and is behavior-preserving: one Claude Code process prompted by
+  `buildAutopilotPrompt`, memory injected. A tenant that configures nothing gets
+  exactly the classic path.
+- **`PipelineRunner`** (`src/runners/pipeline-runner.ts`) is opt-in via
+  `runner: 'pipeline'` (`src/config/tenants.ts`). It runs a sequential,
+  role-specialized flow — `planner` → `implementer` → `reviewer` — where only the
+  implementer writes code. The reviewer reads the branch diff and ends with
+  `VERDICT: APPROVE | REQUEST_CHANGES`; on `REQUEST_CHANGES` the implementer runs
+  one fix pass, bounded by `pipelineMaxRevisions` (default 1), and the loop always
+  terminates. Each role reports its own tokens, cost, and duration
+  (`RoleResult`), while the spawner still records one aggregate usage entry per
+  ticket.
+
+Because it is sequential and single-writer, the pipeline sidesteps the
+parallel-editor file-conflict problem; the trade is cost and latency, roughly N×
+the agent calls of a single run. The full reasoning is in
+[ADR-0007](adr/0007-single-agent-vs-pipeline-runner.md).
+
+## Scaling
+
+Autopilot is a single node today. The work queue is in memory
+(`src/spawner/queue.ts`), memory / cost / completion state is local JSON, and git
+checkouts are host-bound — so throughput is capped by one host and queued work
+does not survive a restart. Within that node, `maxConcurrentAgents` (per tenant),
+`MAX_RETRIES`, and Linear rate limiting are the vertical levers that provide
+bounded fan-out and backpressure: at capacity the spawner simply leaves work
+queued. Opting a tenant into the pipeline runner multiplies per-ticket agent
+calls, so it reaches the node's ceiling with fewer concurrent tickets. The
+concrete horizontal path — externalize the queue to Postgres/Redis with
+leased/locked jobs, move shared state to a shared store, split the webhook
+receiver from the worker, shard by repo — is recorded in
+[ADR-0008](adr/0008-scaling-model.md).
 
 ## How it handles agent failure (feedback loops)
 
@@ -159,7 +205,7 @@ suggestions.
 ## Platform decisions & tradeoffs
 
 **Spawn Claude Code vs. build a bespoke agent.** Autopilot shells out to the
-`claude` CLI (`Spawner.runClaudeCode`) rather than embedding a model client and
+`claude` CLI (`src/runners/invoke.ts`) rather than embedding a model client and
 managing its own tool loop. The tradeoff: less control over the inner agent loop
 in exchange for inheriting Claude Code's tool use, file editing, and iteration
 for free — and the ability to upgrade the agent by upgrading the CLI. The

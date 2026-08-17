@@ -20,8 +20,8 @@ cost tracking. That layer is what a bespoke loop would distract from.
 
 ## Decision
 
-Spawn the `claude` CLI as a subprocess for each ticket.
-`Spawner.runClaudeCode` (`src/spawner/index.ts`) calls
+Spawn the `claude` CLI as a subprocess for each ticket. The runner layer
+invokes it in one place, `src/runners/invoke.ts`, which calls
 `spawn('claude', ['-p', '--dangerously-skip-permissions', prompt], ...)` with
 the repo as `cwd` and a scrubbed environment, captures stdout/stderr, and treats
 exit code `0` as "the agent thinks it is done." The prompt is assembled by
@@ -57,6 +57,10 @@ validation, PR creation, memory — is Autopilot's, not the agent's.
 - **Agent framework (LangGraph / CrewAI).** Provides loop scaffolding but adds a
   heavy dependency and its own abstractions, while still needing coding-specific
   tools wired in. Rejected as more weight than the single-subprocess boundary.
-- **Multi-agent runner strategies** (planner/coder/reviewer swarms) are sketched
-  in `src/_experimental/runners` but are explicitly not wired in
-  (`src/_experimental/README.md`); the shipped path is a single CLI process.
+- **Multi-agent runner strategies.** A single CLI process is the default, but the
+  runner layer (`src/runners/`) also ships an opt-in sequential
+  planner → implementer → reviewer pipeline. That decision — single-agent default
+  vs. the multi-role pipeline, and why the pipeline is sequential rather than a
+  parallel swarm — is recorded in
+  [ADR-0007](0007-single-agent-vs-pipeline-runner.md). Either way, each role is a
+  spawned `claude` process, so this decision stands.

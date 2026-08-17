@@ -37,11 +37,13 @@ Every ADR follows the same structure:
 
 ## Index
 
-| ADR                                           | Title                                                    | Status   |
-| --------------------------------------------- | -------------------------------------------------------- | -------- |
-| [0001](0001-spawn-claude-code-cli.md)         | Spawn the Claude Code CLI as the coding agent            | Accepted |
-| [0002](0002-validation-as-hard-gate.md)       | Validation as a hard gate before PR creation             | Accepted |
-| [0003](0003-cross-session-memory.md)          | Cross-session memory as a summarized JSON learning store | Accepted |
-| [0004](0004-security-posture.md)              | Security posture for a code-executing agent              | Accepted |
-| [0005](0005-multi-tenant-credential-model.md) | Multi-tenant credential model with optional overrides    | Proposed |
-| [0006](0006-mcp-read-only-surface.md)         | Expose the platform over a read-only MCP surface         | Accepted |
+| ADR                                             | Title                                                           | Status   |
+| ----------------------------------------------- | --------------------------------------------------------------- | -------- |
+| [0001](0001-spawn-claude-code-cli.md)           | Spawn the Claude Code CLI as the coding agent                   | Accepted |
+| [0002](0002-validation-as-hard-gate.md)         | Validation as a hard gate before PR creation                    | Accepted |
+| [0003](0003-cross-session-memory.md)            | Cross-session memory as a summarized JSON learning store        | Accepted |
+| [0004](0004-security-posture.md)                | Security posture for a code-executing agent                     | Accepted |
+| [0005](0005-multi-tenant-credential-model.md)   | Multi-tenant credential model with optional overrides           | Proposed |
+| [0006](0006-mcp-read-only-surface.md)           | Expose the platform over a read-only MCP surface                | Accepted |
+| [0007](0007-single-agent-vs-pipeline-runner.md) | Single-agent default with an opt-in multi-agent pipeline runner | Accepted |
+| [0008](0008-scaling-model.md)                   | Scaling model: single-node today, a defined horizontal path     | Accepted |

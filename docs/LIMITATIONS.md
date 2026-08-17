@@ -35,8 +35,8 @@ most reliable way to hit its limits.
 
 **Not a security sandbox.** The controls in [SECURITY.md](../SECURITY.md) reduce
 the risk of running a coding agent; they do not remove it. The agent is spawned
-with `--dangerously-skip-permissions` (`Spawner.runClaudeCode`,
-`src/spawner/index.ts`) so it can work unattended, which makes runtime isolation
+with `--dangerously-skip-permissions` (`src/runners/invoke.ts`) so it can work
+unattended, which makes runtime isolation
 (a dedicated container or VM, least-privilege tokens, protected `main`,
 restricted egress) a **required** operating condition, not a nice-to-have.
 
@@ -100,16 +100,30 @@ consequences bounded.
 all three attempts before it is dropped. There is no "this will never succeed"
 classifier.
 
+**The pipeline runner costs more than it looks.** The planner → implementer →
+reviewer pipeline is shipped and opt-in (`runner: 'pipeline'`,
+`src/runners/pipeline-runner.ts`, [ADR-0007](adr/0007-single-agent-vs-pipeline-runner.md)),
+not the default. It makes several Claude Code calls per ticket instead of one —
+planner, implementer, reviewer, and up to `pipelineMaxRevisions` implementer fix
+passes — so both cost and wall-clock latency scale roughly N× versus a single
+run. It is a quality-for-cost trade to enable deliberately per tenant, not a free
+upgrade. The reviewer's `VERDICT` is prompt-driven and can be wrong in either
+direction; the validation gate, not the reviewer, remains the hard correctness
+check.
+
+**Autopilot is a single node.** The work queue is in memory
+(`src/spawner/queue.ts`), memory / cost / completion state is local JSON, and git
+checkouts are host-bound, so throughput is capped by one host and queued work does
+not survive a restart. `maxConcurrentAgents`, `MAX_RETRIES`, and Linear rate
+limiting are the vertical levers; the horizontal path (externalized queue, shared
+state, split receiver/worker, shard by repo) is defined but not built. The
+pipeline runner brings this ceiling closer by multiplying per-ticket load. See
+[ADR-0008](adr/0008-scaling-model.md).
+
 ## Not built yet (status, not scope)
 
 These are honestly incomplete, distinct from the deliberate non-goals above.
 
-- **Experimental runners and coordination are not wired in.** The pluggable
-  runners (`swarm-sdk`, `claude-on-rails`, `selectRunner`) and the multi-agent
-  coordination layer live in `src/_experimental/`. They are excluded from the
-  build, typecheck, and coverage, and their imports still point at an older
-  layout, so they do not currently compile. They are preserved direction, not
-  shipped capability.
 - **Live end-to-end evaluations have not been run.** The metrics scaffolding
   exists in code (cost, completions, success/failure counts, validation-failure
   counts), but the platform has not been evaluated against real repos at volume.

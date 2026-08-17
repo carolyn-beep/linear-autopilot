@@ -180,11 +180,21 @@ tenants are configured by, and share the trust boundary of, whoever runs
 Autopilot. It is not multi-user SaaS with isolation between mutually-distrusting
 customers.
 
-**Experimental, not wired in.** The pluggable runners (`swarm-sdk`,
-`claude-on-rails`, and the `selectRunner` router) and the multi-agent
-coordination layer live in `src/_experimental/`. They are excluded from the
-build, typecheck, and coverage, and their imports still point at an older layout,
-so they do not yet compile. They are preserved direction, not shipped features.
+**Shipped, opt-in.** Beyond the default single-agent path, a sequential
+planner → implementer → reviewer pipeline ships as an opt-in runner
+(`runner: 'pipeline'`, `src/runners/pipeline-runner.ts`). It is real and wired in
+through the `AgentRunner` abstraction (`src/runners/`,
+[ADR-0007](adr/0007-single-agent-vs-pipeline-runner.md)); the trade is cost and
+latency, roughly N× the agent calls of a single run, which is why it is opt-in
+per tenant rather than the default.
+
+**Single-node scaling ceiling.** One instance holds the queue in memory, keeps
+memory/cost/completion state in local JSON, and works host-bound git checkouts.
+`maxConcurrentAgents`, `MAX_RETRIES`, and Linear rate limits are the vertical
+levers; the horizontal path (externalized queue, shared state, split
+receiver/worker, shard by repo) is a defined roadmap item, not built yet. The
+pipeline runner intensifies this ceiling by multiplying per-ticket load. See
+[ADR-0008](adr/0008-scaling-model.md).
 
 **Not yet run.** Live end-to-end evaluations against real repos have not been
 run. The metrics scaffolding exists (see above); the evaluation itself is

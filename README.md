@@ -1,5 +1,7 @@
 # Linear Autopilot
 
+![CI](https://github.com/carolyn-beep/linear-autopilot/actions/workflows/ci.yml/badge.svg)
+
 Autonomous AI agents that implement your Linear tickets while you sleep.
 
 ![Dashboard](docs/dashboard.png)
@@ -63,9 +65,18 @@ Adding a capability touches a small, predictable surface:
   is ~3 files.
 - **A validation check** — return a `ValidationResult` and add it to `validate()`
   (`src/validation/index.ts`). Any failing check fails the PR gate.
-- **A pluggable runner** — an exploratory abstraction in `src/_experimental/`
-  for choosing a per-ticket execution strategy (single agent, swarm, Rails
-  swarm). Not yet wired into the shipped loop.
+- **A runner** — implement the `AgentRunner` interface (`src/runners/types.ts`)
+  and select it per tenant in `createRunner` (`src/runners/index.ts`). Two runners
+  ship: the default `single` agent, and an opt-in `pipeline`. Choose per tenant
+  with `runner: 'single' | 'pipeline'` (`src/config/tenants.ts`).
+
+A **planner → implementer → reviewer pipeline** ships as an opt-in runner
+(`runner: 'pipeline'`): a sequential, role-specialized flow where only the
+implementer writes code, the reviewer approves or requests changes on the branch
+diff, and a bounded revision loop (`pipelineMaxRevisions`, default 1) always
+terminates. It trades cost and latency (several agent calls per ticket) for a
+planning step and an independent critic; the default single-agent path is
+unchanged. See [ADR-0007](docs/adr/0007-single-agent-vs-pipeline-runner.md).
 
 Step-by-step guides with code sketches: [**docs/EXTENDING.md**](docs/EXTENDING.md).
 
