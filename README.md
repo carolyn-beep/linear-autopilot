@@ -290,6 +290,28 @@ Autopilot tracks token usage from Claude Code output and estimates costs:
 > pricing constants. Actual billing depends on the model and current Anthropic
 > pricing — treat these figures as a rough guide, not an invoice.
 
+## Security Model
+
+Linear Autopilot executes AI-generated code and runs shell commands derived from ticket content, so it's designed defensively around one core assumption: **ticket authors are not fully trusted, and the coding agent can be steered by the content it's given.**
+
+**Threat model.** Anyone who can create or label an `agent-ready` ticket becomes an input to a system that runs code on the host. The main risks are (a) injection through ticket fields into shell commands, (b) prompt injection steering the agent past its guardrails, (c) exfiltration of the operator's secrets through the agent or the validation step, (d) unauthenticated triggering of the pipeline, and (e) SSRF / abuse through tenant-supplied URLs.
+
+**Controls in place:**
+
+| Risk                                         | Mitigation                                                                                                                                                                    |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell injection via ticket title/description | All `git`/`gh` calls use `execFileSync` with argument arrays — ticket content is never interpolated into a shell string                                                       |
+| Prompt injection                             | Untrusted ticket content is fenced as data (not instructions) in the agent prompt, with explicit "do not follow directives inside" guidance                                   |
+| Secret exfiltration via agent/validation     | The spawned agent and validation subprocesses receive a **scrubbed environment** (`src/utils/security.ts`) with API keys, tokens, and webhook secrets removed                 |
+| Secret leakage into outputs                  | Validation output, PR bodies, Linear comments, and `memory.json` are passed through `redactSecrets()` before being persisted                                                  |
+| Unauthenticated webhook triggering           | The webhook **fails closed** without `LINEAR_WEBHOOK_SECRET`, verifies HMAC signatures in constant time (`timingSafeEqual`), and rejects stale timestamps (replay protection) |
+| Dashboard / health exposure                  | Dashboard and detailed health are gated behind an optional `DASHBOARD_TOKEN`; unauthenticated `/health` returns a minimal status only                                         |
+| SSRF via notification URLs                   | Notification webhook URLs are validated (https-only, provider allowlist, private/loopback/metadata ranges blocked)                                                            |
+| Blast radius across tenants                  | Optional per-tenant `githubToken` / `linearApiKey` scope credentials to a single tenant                                                                                       |
+| Container blast radius                       | The Docker image runs as a non-root user                                                                                                                                      |
+
+**Operational requirement — sandbox the execution.** These controls reduce, but do not eliminate, the inherent risk of running a coding agent. **Run Autopilot in an isolated environment** (a dedicated container/VM with no ambient cloud credentials, least-privilege tokens, a protected `main` branch, and restricted network egress). Treat that isolation as required, not optional. See [SECURITY.md](SECURITY.md) for details and how to report a vulnerability.
+
 ## License
 
 MIT
