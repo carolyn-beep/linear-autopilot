@@ -118,13 +118,14 @@ lives in `src/prompts.ts`:
 
 ### Platform decisions & tradeoffs
 
-| Decision                                       | Tradeoff                                                                                                                                                       |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spawn the Claude Code CLI vs. a bespoke agent  | Less control over the inner loop; inherit tool use + iteration, upgrade the agent by upgrading the CLI. The orchestration platform is the differentiated part. |
-| Validation as a gate vs. self-reported success | Lower throughput on failure; a much higher floor on PR quality.                                                                                                |
-| Cross-session memory vs. stateless runs        | Some risk of poisoning future runs; compounding gains as the agent stops repeating errors.                                                                     |
-| Provider abstraction vs. per-channel branches  | More upfront structure; a new channel is ~3 files and a test.                                                                                                  |
-| Bounded retries + branch cleanup               | Leans reliability over raw velocity; the dials (`maxConcurrentAgents`, `COVERAGE_THRESHOLD`) are exposed.                                                      |
+| Decision                                            | Tradeoff                                                                                                                                                                                              |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell out to a coding-agent CLI vs. a bespoke agent | Less control over the inner loop; inherit tool use + iteration, upgrade the agent by upgrading the CLI. The orchestration platform is the differentiated part.                                        |
+| Pluggable agent backend, Claude Code as default     | Claude Code is the default backend; a tenant can point at another CLI via `agentBackend`. Non-Claude backends may lack usage/cost telemetry ([ADR-0009](docs/adr/0009-agent-backend-abstraction.md)). |
+| Validation as a gate vs. self-reported success      | Lower throughput on failure; a much higher floor on PR quality.                                                                                                                                       |
+| Cross-session memory vs. stateless runs             | Some risk of poisoning future runs; compounding gains as the agent stops repeating errors.                                                                                                            |
+| Provider abstraction vs. per-channel branches       | More upfront structure; a new channel is ~3 files and a test.                                                                                                                                         |
+| Bounded retries + branch cleanup                    | Leans reliability over raw velocity; the dials (`maxConcurrentAgents`, `COVERAGE_THRESHOLD`) are exposed.                                                                                             |
 
 ### How success is measured
 

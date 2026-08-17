@@ -58,16 +58,31 @@ export interface InvokeAgentOptions {
 }
 
 /**
- * Injectable agent-invocation function. The live implementation spawns
- * `claude -p --dangerously-skip-permissions`; tests supply a mock. Resolves with
- * the agent's output plus optional parsed usage; REJECTS when the agent fails to
- * run (non-zero exit / spawn error).
+ * The result of a single agent invocation. `tokens` and `costUsd` are optional
+ * and HONEST: a backend that cannot parse usage telemetry from its CLI leaves
+ * them undefined rather than fabricating a number. This is the shape both the
+ * runners and the {@link InvokeAgent} seam consume.
+ */
+export interface AgentResult {
+  /** Raw combined stdout/stderr captured from the agent. */
+  output: string;
+  /** Total tokens (input + output), when the backend can parse usage. */
+  tokens?: number;
+  /** Estimated USD cost, when the backend can parse usage. */
+  costUsd?: number;
+}
+
+/**
+ * Injectable agent-invocation function. The live implementation delegates to an
+ * {@link AgentBackend} (Claude Code by default); tests supply a mock. Resolves
+ * with the agent's output plus optional parsed usage; REJECTS when the agent
+ * fails to run (non-zero exit / spawn error).
  */
 export type InvokeAgent = (
   role: AgentRole,
   prompt: string,
   opts: InvokeAgentOptions
-) => Promise<{ output: string; tokens?: number; costUsd?: number }>;
+) => Promise<AgentResult>;
 
 /** A strategy for turning a ticket into an implementation on its branch. */
 export interface AgentRunner {

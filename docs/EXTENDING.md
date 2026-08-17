@@ -148,12 +148,11 @@ default, behavior-preserving) and `PipelineRunner`
 pipeline). The design rationale is [ADR-0007](adr/0007-single-agent-vs-pipeline-runner.md).
 
 **Step 1 — implement `AgentRunner`.** Take the agent invocation as an injected
-`InvokeAgent` (`src/runners/types.ts`) rather than spawning `claude` yourself.
-That is what keeps runners unit-testable: tests pass a mock, production passes the
-live invoker. The one real spawn boundary is `createClaudeInvoker()`
-(`src/runners/invoke.ts`) — a shell-free `spawn('claude', ['-p',
-'--dangerously-skip-permissions', prompt], { env: scrubbedEnv(), cwd })`. Do not
-add a second spawn site.
+`InvokeAgent` (`src/runners/types.ts`) rather than spawning an agent yourself.
+That is what keeps runners unit-testable: tests pass a mock, production passes an
+invoker derived from the tenant's agent backend. The real spawn boundary lives in
+the backend layer (`src/runners/backends/`), not in runners — see section 4. Do
+not add a spawn site inside a runner.
 
 ```ts
 // src/runners/my-runner.ts
@@ -198,19 +197,104 @@ union (`src/config/tenants.ts`) and a branch in `createRunner`
 (`src/runners/index.ts`):
 
 ```ts
-export function createRunner(tenant: TenantConfig, invoke = createClaudeInvoker()): AgentRunner {
+export function createRunner(
+  tenant: TenantConfig,
+  invoke = createBackendInvoker(createBackend(tenant))
+): AgentRunner {
   if (tenant.runner === 'pipeline') return new PipelineRunner({ invoke });
   if (tenant.runner === 'my-runner') return new MyRunner(invoke); // <-- add here
   return new SingleAgentRunner({ invoke });
 }
 ```
 
-The spawner already calls `createRunner(tenant).run(...)`
-(`src/spawner/index.ts`); the validation gate, PR creation, and memory downstream
-are unchanged, so a new runner needs no changes there.
+The default `invoke` is derived from the tenant's agent backend (section 4), so a
+runner works with whatever backend the tenant configured. The spawner already
+calls `createRunner(tenant).run(...)` (`src/spawner/index.ts`); the validation
+gate, PR creation, and memory downstream are unchanged, so a new runner needs no
+changes there.
 
 **Step 3 — test it** by constructing the runner with a mock `InvokeAgent` and
 asserting on the returned `RunnerResult` (success, summary, `roleResults`). No
-real `claude` process is involved.
+real agent process is involved.
+
+## 4. Add or configure an agent backend
+
+A runner decides _how_ a ticket is worked; a backend decides _which coding agent_
+runs each call. The two are independent extension points — a backend works under
+either runner. This is what makes the coding agent pluggable rather than
+hard-wired to Claude Code.
+
+The contract is `AgentBackend` (`src/runners/backends/types.ts`):
+
+```ts
+export interface AgentBackend {
+  invoke(role: AgentRole, prompt: string, opts: InvokeAgentOptions): Promise<AgentResult>;
+}
+```
+
+`AgentResult` is `{ output; tokens?; costUsd? }` — the same shape runners already
+consume. `tokens` and `costUsd` are optional and must stay honest: if a backend's
+CLI does not emit parseable usage, leave them undefined rather than fabricating a
+number.
+
+Two backends ship: `ClaudeCodeBackend` (`src/runners/backends/claude-code.ts`,
+the default) and `CommandBackend` (`src/runners/backends/command.ts`). The design
+rationale is [ADR-0009](adr/0009-agent-backend-abstraction.md).
+
+### Configure the generic command backend (no code)
+
+Most alternative agents need no new code — just point `CommandBackend` at the CLI
+via a tenant's `agentBackend` field (`src/config/tenants.ts`):
+
+```jsonc
+// Prompt substituted for the {prompt} argv token (default)
+"agentBackend": {
+  "type": "command",
+  "command": "my-agent",
+  "args": ["run", "--task", "{prompt}"]
+}
+
+// Prompt delivered on the child's stdin
+"agentBackend": {
+  "type": "command",
+  "command": "my-agent",
+  "args": ["run"],
+  "promptVia": "stdin"
+}
+```
+
+The command is always spawned shell-free with a scrubbed environment, and the
+prompt is a single literal argv element (or stdin) — never interpolated into a
+shell string, so ticket content cannot inject a command.
+
+### Add a new backend type (code)
+
+When a CLI needs bespoke handling (a different token format, a wrapper protocol),
+implement `AgentBackend` and wire it into the factory:
+
+**Step 1 — implement the backend** in `src/runners/backends/`. Spawn shell-free
+with `scrubbedEnv()` and the repo as `cwd`, capture stdout/stderr, resolve an
+`AgentResult` on clean exit, and reject with `AgentInvocationError`
+(`src/runners/backends/errors.ts`) on non-zero exit or spawn error — carrying the
+captured output so the spawner can still record context. Parse usage only if the
+CLI reliably emits it.
+
+**Step 2 — wire it into the factory** by extending the `AgentBackendConfig` union
+(`src/runners/backends/types.ts`) and adding a branch in `createBackend`
+(`src/runners/backends/index.ts`):
+
+```ts
+export function createBackend(tenant: TenantConfig): AgentBackend {
+  const config = tenant.agentBackend;
+  if (!config || config.type === 'claude-code') return new ClaudeCodeBackend();
+  if (config.type === 'my-backend') return new MyBackend(config); // <-- add here
+  return new CommandBackend(config);
+}
+```
+
+**Step 3 — test it** by mocking `child_process.spawn` with a fake process and
+asserting on the argv, `shell: false`, the scrubbed env, the resolved
+`AgentResult`, and the `AgentInvocationError` path. Never spawn a real CLI in a
+test. See `tests/runners/backends/` for the pattern.
 
 For the MCP control surface, see [MCP.md](MCP.md).

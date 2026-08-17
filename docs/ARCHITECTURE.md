@@ -64,6 +64,7 @@ points, from most to least mature:
 | Validation checks      | `src/validation/index.ts`    | `ValidationResult`-returning step added to `validate()` | Shipped                     |
 | Notification events    | `src/notifications/types.ts` | `NotificationEvent` union + event factory               | Shipped                     |
 | Runner strategy        | `src/runners`                | `AgentRunner` interface + `createRunner(tenant)`        | Shipped, 2 runners (opt-in) |
+| Agent backend          | `src/runners/backends`       | `AgentBackend` interface + `createBackend(tenant)`      | Shipped, 2 backends         |
 
 See [EXTENDING.md](EXTENDING.md) for the how-to on each.
 
@@ -74,9 +75,10 @@ How a ticket gets implemented sits behind one interface, `AgentRunner`
 knowing the details. The spawner calls `createRunner(tenant).run(...)`
 (`src/runners/index.ts`, `src/spawner/index.ts`); everything downstream — the
 validation gate, PR creation, memory — is identical regardless of which runner
-ran. The agent invocation itself is injected (`InvokeAgent`), and the one place a
-real `claude` process is spawned is `src/runners/invoke.ts` (safe argv `spawn`
-with a scrubbed environment), which keeps runners unit-testable without the CLI.
+ran. The agent invocation itself is injected (`InvokeAgent`); the runner never
+spawns an agent directly, which keeps runners unit-testable without any CLI. In
+production that injected function comes from the tenant's **agent backend** (see
+below).
 
 Two runners ship:
 
@@ -98,6 +100,33 @@ Because it is sequential and single-writer, the pipeline sidesteps the
 parallel-editor file-conflict problem; the trade is cost and latency, roughly N×
 the agent calls of a single run. The full reasoning is in
 [ADR-0007](adr/0007-single-agent-vs-pipeline-runner.md).
+
+## Agent backend
+
+Which coding agent actually runs sits behind a second interface, `AgentBackend`
+(`src/runners/backends/types.ts`), one level below the runner. A runner decides
+_how a ticket is worked_ (single vs. pipeline); a backend decides _which agent
+executes each call_. `createBackend(tenant)` (`src/runners/backends/index.ts`)
+maps a tenant's optional `agentBackend` config to a concrete backend, and
+`createRunner` turns that into the runner's injected `InvokeAgent`. This is the
+one real spawn boundary for the coding agent.
+
+Two backends ship:
+
+- **`ClaudeCodeBackend`** (`src/runners/backends/claude-code.ts`) is the default.
+  It is the classic behavior: `spawn('claude', ['-p',
+'--dangerously-skip-permissions', prompt], { env: scrubbedEnv(), cwd })`, plus
+  the Claude token parse and pricing. A tenant that configures nothing gets
+  exactly this.
+- **`CommandBackend`** (`src/runners/backends/command.ts`) runs a configurable
+  CLI (`{ command, args, promptVia? }`). The prompt is either substituted for the
+  `{prompt}` token in `args` (default) or written to the child's stdin. It always
+  spawns shell-free with a scrubbed environment, so there is no injection surface.
+  An arbitrary CLI has no usage/pricing contract, so this backend reports token
+  and cost telemetry as unavailable rather than fabricating it.
+
+Claude Code being the default (not the only option) is recorded in
+[ADR-0009](adr/0009-agent-backend-abstraction.md).
 
 ## Scaling
 
@@ -204,13 +233,17 @@ suggestions.
 
 ## Platform decisions & tradeoffs
 
-**Spawn Claude Code vs. build a bespoke agent.** Autopilot shells out to the
-`claude` CLI (`src/runners/invoke.ts`) rather than embedding a model client and
-managing its own tool loop. The tradeoff: less control over the inner agent loop
-in exchange for inheriting Claude Code's tool use, file editing, and iteration
-for free — and the ability to upgrade the agent by upgrading the CLI. The
-orchestration platform (queueing, validation, memory, notifications, tenancy) is
-the differentiated part and is where the code invests.
+**Shell out to a coding-agent CLI vs. build a bespoke agent.** Autopilot shells
+out to a coding-agent CLI rather than embedding a model client and managing its
+own tool loop. The tradeoff: less control over the inner agent loop in exchange
+for inheriting tool use, file editing, and iteration for free — and the ability
+to upgrade the agent by upgrading the CLI. The orchestration platform (queueing,
+validation, memory, notifications, tenancy) is the differentiated part and is
+where the code invests. Claude Code is the **default** backend
+(`src/runners/backends/claude-code.ts`); a tenant can point Autopilot at a
+different CLI via `agentBackend` without touching the runner layer
+([ADR-0009](adr/0009-agent-backend-abstraction.md)). Non-Claude backends may
+lack usage/cost telemetry, which is reported as unavailable rather than guessed.
 
 **Validation as a gate, not a suggestion.** The alternative — let the agent
 self-report success and open a PR — is faster but shifts all verification onto

@@ -47,3 +47,4 @@ Every ADR follows the same structure:
 | [0006](0006-mcp-read-only-surface.md)           | Expose the platform over a read-only MCP surface                | Accepted |
 | [0007](0007-single-agent-vs-pipeline-runner.md) | Single-agent default with an opt-in multi-agent pipeline runner | Accepted |
 | [0008](0008-scaling-model.md)                   | Scaling model: single-node today, a defined horizontal path     | Accepted |
+| [0009](0009-agent-backend-abstraction.md)       | Pluggable agent backend with Claude Code as the default         | Accepted |
