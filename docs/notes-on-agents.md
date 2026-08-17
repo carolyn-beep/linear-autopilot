@@ -1,4 +1,4 @@
-# Notes on Agentic Orchestration
+# Notes on Running Coding Agents
 
 A short, opinionated take on why coding agents fail in production and which
 patterns actually survive contact with a real repo. Opinions here are held
@@ -11,7 +11,7 @@ change them for better evidence. Claims are grounded in modules you can read.
 unsolved problem is trust: can you let an agent touch a repo unattended and rely
 on what comes out. That reframing moves the engineering effort from the model to
 everything around it. The model is a component you rent and upgrade; the
-orchestration is the product.
+scaffolding around it is where the real work is.
 
 Coding agents fail in three boringly consistent ways, and an honest system is
 designed around them rather than around the demo where they don't happen:
@@ -40,8 +40,8 @@ This generalizes. Any autonomous agent that produces an artifact should have an
 independent, mechanical check between "produced" and "accepted," as close as
 possible to the one a human would apply anyway. The gate is boring,
 deterministic, and the single biggest reason the output floor stays high.
-**Production-ready, not a research curiosity.** It is also the cheapest pattern
-to adopt and the one people skip first.
+**This pattern is dependable, not experimental.** It is also the cheapest to
+adopt and the one people skip first.
 
 ## Context as a designed budget
 
@@ -118,13 +118,13 @@ annotated `readOnlyHint`, and nothing mutates state. An agent can ask "what's in
 the queue" or "what has this cost." It cannot enqueue or cancel work.
 
 That scoping is the opinion. MCP is genuinely good at read-only observability and
-composing capabilities behind a uniform interface. What is still immature is
-trusting it with mutation and authority: once tools can act, you inherit the
-agent's failure modes with real side effects, and the ecosystem's story for auth,
-rate limiting, and blast-radius control is thin. The call: **read-only MCP as an
-observability surface is production-ready; agents wielding write-capable tools
-autonomously is still a research posture,** worth prototyping behind the same
-gates and structural limits as everything else, not shipped on trust.
+exposing tools behind a uniform interface. What is still immature is trusting it
+with mutation and authority: once tools can act, you inherit the agent's failure
+modes with real side effects, and the ecosystem's story for auth, rate limiting,
+and blast-radius control is thin. The call: **read-only MCP as an observability
+surface is ready to ship; letting agents wield write-capable tools autonomously is
+still experimental,** worth prototyping behind the same gates and structural limits
+as everything else, not shipped on trust.
 
 ## What I would bet on
 

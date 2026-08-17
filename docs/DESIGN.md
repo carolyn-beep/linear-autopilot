@@ -40,9 +40,8 @@ guardrail layer that makes the answer defensibly yes for a bounded class of work
    the failure modes that do not announce themselves.
 4. Get better over the life of a repo, not stay flat, by feeding real outcomes
    back into the next run.
-5. Be a platform an engineer extends, not a script they fork. Adding a
-   notification channel or a validation check should touch a small, typed
-   surface.
+5. Be extensible without forking. Adding a notification channel or a validation
+   check should touch a small, typed surface, not the core loop.
 
 ## Non-goals (explicit)
 
@@ -104,10 +103,10 @@ to Backlog, run requeued. This is the single most important quality decision in
 the system. It trades throughput on failing runs for a high floor on what a human
 ever sees.
 
-**3. Capabilities are composable, the loop is fixed.** The orchestration loop is
-one code path. The things plugged into it (notification providers, validation
-checks, notification events) go through typed interfaces and registries rather
-than branches in the core. Six notification providers ship behind one
+**3. The loop is fixed; the pieces plug in.** The orchestration loop is one code
+path. The things plugged into it (notification providers, validation checks,
+notification events) go through typed interfaces and registries rather than
+branches in the core. Six notification providers ship behind one
 `NotificationProvider` interface; a seventh is a file plus a test. See the
 extension-point table in [ARCHITECTURE.md](ARCHITECTURE.md#extension-points).
 
@@ -143,12 +142,12 @@ are none.**
 validation failure counts (`src/memory/index.ts`), and retry attempts per ticket
 (`src/spawner/queue.ts`).
 
-**Target (the metrics the platform exists to move, not yet computed):** time from
+**Target (the metrics the system is meant to move, not yet computed):** time from
 label to PR, PR acceptance/merge rate, retry rate and mean attempts-to-success,
 and cost per _merged_ PR. Several of these have their inputs already (enqueue and
 completion timestamps, queue attempts) but are not aggregated, and merge rate
-requires reading status back from GitHub, which the platform does not yet do. See
-[ARCHITECTURE.md → How success is measured](ARCHITECTURE.md#how-success-is-measured).
+requires reading status back from GitHub, which the system does not yet do. See
+[ARCHITECTURE.md → Metrics](ARCHITECTURE.md#metrics).
 
 Cost figures are estimates from a hardcoded per-token price constant
 (Claude 3.5 Sonnet rates in `src/tracking/index.ts`), parsed from CLI output.
@@ -165,11 +164,11 @@ They are a directional guide, not a bill.
 | Agent hangs with no exit code               | The failure mode that never returns    | Stuck detection fires an `agent-stuck` alert past a threshold                           | Alert only; it does not yet kill the run                   |
 | Running agent-authored code on the host     | Inherent to the product                | Documented requirement to run in an isolated environment                                | The isolation is the operator's responsibility             |
 
-## Roadmap: production-ready vs experimental
+## Roadmap: shipped vs experimental
 
-Stated plainly, because a portfolio reviewer should be able to tell what is real.
+Stated plainly, so it is clear what is real and what is not.
 
-**Production-ready today.** The core loop: watch, queue, spawn, validate, PR or
+**Shipped today.** The core loop: watch, queue, spawn, validate, PR or
 fail, learn. Multi-tenant configuration and per-tenant credential scoping. Six
 notification providers. Cost and completion tracking. The dashboard. The
 read-only MCP server. The security controls in [SECURITY.md](../SECURITY.md).

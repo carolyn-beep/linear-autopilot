@@ -1,8 +1,8 @@
 # Architecture
 
-This document covers the internals of Linear Autopilot as a platform: the
-orchestration loop, how the system handles agent failure, how the agent's
-context is engineered, and the platform decisions and metrics behind it.
+This document covers the internals of Linear Autopilot: the orchestration loop,
+how the system handles agent failure, how the prompt is built, and the design
+decisions and metrics behind it.
 
 For a task-level guide to adding providers, checks, and runners, see
 [EXTENDING.md](EXTENDING.md). For the MCP integration, see [MCP.md](MCP.md).
@@ -55,7 +55,7 @@ Concretely:
 
 ## Extension points
 
-The loop is fixed; the capabilities plugged into it are not. The extension
+The loop is fixed; the pieces plugged into it are not. The extension
 points, from most to least mature:
 
 | Point                  | Where                        | Shape                                                   | Status                      |
@@ -196,10 +196,10 @@ human in it.
 Memory is bounded (`MEMORY_LIMITS` in `src/constants.ts`; file patterns and
 causes are sliced) so it can't grow without limit or blow the context budget.
 
-## Context engineering
+## How the prompt is built
 
-The agent gets exactly one shot per attempt, so what goes into the prompt is a
-design surface, not an afterthought. Prompt assembly lives in `src/prompts.ts`
+The agent gets exactly one shot per attempt, so what goes into the prompt matters.
+Prompt assembly lives in `src/prompts.ts`
 (`buildAutopilotPrompt`).
 
 **What's included, and why:**
@@ -231,15 +231,15 @@ rules that constrain the agent (branch discipline, no remote push) are called ou
 separately from the task steps so they read as invariants rather than
 suggestions.
 
-## Platform decisions & tradeoffs
+## Design decisions
 
 **Shell out to a coding-agent CLI vs. build a bespoke agent.** Autopilot shells
 out to a coding-agent CLI rather than embedding a model client and managing its
 own tool loop. The tradeoff: less control over the inner agent loop in exchange
-for inheriting tool use, file editing, and iteration for free — and the ability
-to upgrade the agent by upgrading the CLI. The orchestration platform (queueing,
-validation, memory, notifications, tenancy) is the differentiated part and is
-where the code invests. Claude Code is the **default** backend
+for inheriting tool use, file editing, and iteration for free, plus the ability
+to upgrade the agent by upgrading the CLI. The orchestration around the agent
+(queueing, validation, memory, notifications, tenancy) is where the code invests
+its effort. Claude Code is the **default** backend
 (`src/runners/backends/claude-code.ts`); a tenant can point Autopilot at a
 different CLI via `agentBackend` without touching the runner layer
 ([ADR-0009](adr/0009-agent-backend-abstraction.md)). Non-Claude backends may
@@ -257,9 +257,9 @@ risk of poisoning future runs with bad "learnings." Autopilot accepts that risk
 repeating the same type errors and know which files to touch — compounds over a
 repo's lifetime.
 
-**Velocity vs. reliability.** Several choices lean reliability: bounded retries
-over infinite retries, a hard validation gate over fast PRs, branch cleanup over
-leaving work in place. The dial is exposed where it matters: `maxConcurrentAgents`
+**Reliability over raw speed.** Several choices lean toward reliability: bounded
+retries over infinite retries, a hard validation gate over fast PRs, branch
+cleanup over leaving work in place. The dial is exposed where it matters: `maxConcurrentAgents`
 per tenant, `COVERAGE_THRESHOLD`, `AGENT_STUCK_THRESHOLD_MS`.
 
 **Provider abstraction over one-offs.** Notifications went through a
@@ -273,10 +273,10 @@ blast radius. Per-tenant Linear keys are a documented next step (see
 [ADR-0005](adr/0005-multi-tenant-credential-model.md)); the Linear client
 currently authenticates with the global key.
 
-## How success is measured
+## Metrics
 
-Some metrics are tracked in code today; others are the targets this platform is
-built to move but does not yet compute. Marked honestly.
+Some metrics are tracked in code today; others are the targets the system is
+meant to move but does not yet compute. Marked honestly.
 
 **Implemented (tracked in code):**
 

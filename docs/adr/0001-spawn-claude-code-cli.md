@@ -9,7 +9,7 @@ Accepted
 Autopilot needs a component that actually writes code: reads a repository,
 edits files, runs tools, and iterates until a task is done. There are three
 ways to obtain that capability. Build a bespoke agent loop directly against a
-model API (own the tool-use loop, the file-editing primitives, the retry and
+model API (own the tool-use loop, the file-editing operations, the retry and
 context management). Adopt an agent framework such as LangGraph or CrewAI.
 Or shell out to an existing, maintained coding agent.
 

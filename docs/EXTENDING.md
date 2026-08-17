@@ -1,8 +1,8 @@
 # Extending Autopilot
 
-Autopilot treats the engineer integrating it as the customer. Capabilities are
-composable building blocks behind small interfaces, not one-off branches in the
-core loop. This guide covers the three extension points and where each plugs in.
+A developer adds a notification provider, a validation check, or a runner by
+implementing a small interface, not by adding branches to the core loop. This
+guide covers those extension points and where each plugs in.
 
 For how these fit the overall system, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
