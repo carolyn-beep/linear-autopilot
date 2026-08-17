@@ -12,8 +12,6 @@ export default tseslint.config(
       'node_modules/**',
       'coverage/**',
       'jest.config.ts',
-      // Experimental, not-wired-in code, excluded from tsconfig (see src/_experimental/README.md).
-      'src/_experimental/**',
     ],
   },
   {
