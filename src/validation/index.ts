@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { logger } from '../logger';
 import { VALIDATION_TIMEOUT_MS } from '../constants';
+import { scrubbedEnv, redactSecrets } from '../utils/security';
 
 export interface ValidationResult {
   name: string;
@@ -51,7 +52,8 @@ function runCommand(
       cwd: repoPath,
       encoding: 'utf-8',
       timeout: VALIDATION_TIMEOUT_MS,
-      env: { ...process.env, CI: 'true' },
+      // Scrub secrets: the command runs code the agent may have written.
+      env: { ...scrubbedEnv(), CI: 'true' },
     });
 
     const duration = Date.now() - startTime;
@@ -63,7 +65,8 @@ function runCommand(
     return {
       name,
       passed,
-      output: output.slice(-5000), // Keep last 5000 chars
+      // Redact secrets before this output is persisted / echoed to Linear / PRs.
+      output: redactSecrets(output.slice(-5000)), // Keep last 5000 chars
       duration,
     };
   } catch (error) {
@@ -71,7 +74,7 @@ function runCommand(
     return {
       name,
       passed: false,
-      output: error instanceof Error ? error.message : String(error),
+      output: redactSecrets(error instanceof Error ? error.message : String(error)),
       duration,
     };
   }

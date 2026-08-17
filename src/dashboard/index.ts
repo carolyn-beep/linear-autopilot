@@ -1,10 +1,11 @@
-import express, { Router, Request, Response } from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import { spawner } from '../spawner';
 import { ticketQueue } from '../spawner/queue';
 import { getAllTenants } from '../config/tenants';
 import { getCostSummary, CostRecord } from '../tracking';
 import { formatDuration, formatUptime } from '../utils';
 import { renderDashboard } from './template';
+import { logger } from '../logger';
 
 interface CompletionRecord {
   ticketId: string;
@@ -43,8 +44,41 @@ export function getRecentCompletions(count: number = 20): CompletionRecord[] {
   return recentCompletions.slice(-count);
 }
 
+let warnedUnauthenticated = false;
+
+// Optional bearer/token auth for all dashboard routes. If DASHBOARD_TOKEN is set,
+// require it (via `Authorization: Bearer <token>` or `?token=`); otherwise warn once.
+function dashboardAuth(req: Request, res: Response, next: NextFunction): void {
+  const token = process.env.DASHBOARD_TOKEN;
+
+  if (!token) {
+    if (!warnedUnauthenticated) {
+      logger.warn('Dashboard is unauthenticated; set DASHBOARD_TOKEN to require access');
+      warnedUnauthenticated = true;
+    }
+    next();
+    return;
+  }
+
+  const authHeader = req.headers['authorization'];
+  const bearer =
+    typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length)
+      : undefined;
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+
+  if (bearer === token || queryToken === token) {
+    next();
+    return;
+  }
+
+  res.status(401).json({ error: 'Unauthorized' });
+}
+
 export function createDashboardRouter(): Router {
   const router = express.Router();
+
+  router.use(dashboardAuth);
 
   // API endpoints
   router.get('/api/status', (_req: Request, res: Response) => {

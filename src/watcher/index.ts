@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import express, { Request, Response } from 'express';
 import { getTenantByTeamId, getAllTenants } from '../config/tenants';
 import { fetchTicket, graphql, LinearTicket } from '../linear';
@@ -10,6 +10,8 @@ const AGENT_READY_LABEL = 'agent-ready';
 interface LinearWebhookPayload {
   action: string;
   type: string;
+  // Linear sends this as an ms-epoch timestamp; used for replay protection.
+  webhookTimestamp?: number;
   data: {
     id: string;
     identifier?: string;
@@ -20,6 +22,9 @@ interface LinearWebhookPayload {
     labelIds?: string[];
   };
 }
+
+// Reject webhooks whose timestamp is more than this far from now (replay protection).
+const WEBHOOK_MAX_SKEW_MS = 60_000;
 
 interface LinearLabel {
   id: string;
@@ -44,17 +49,37 @@ export function createWebhookRouter(): express.Router {
     async (req: Request, res: Response) => {
       const webhookSecret = process.env.LINEAR_WEBHOOK_SECRET;
 
-      if (webhookSecret) {
-        const signature = req.headers['linear-signature'] as string;
-        if (!verifyWebhookSignature(req.body, signature, webhookSecret)) {
-          logger.warn('Invalid webhook signature');
-          res.status(401).json({ error: 'Invalid signature' });
-          return;
-        }
+      // Fail closed: refuse to process unsigned webhooks when no secret is configured.
+      if (!webhookSecret) {
+        logger.error(
+          'LINEAR_WEBHOOK_SECRET is required for webhook mode; rejecting unsigned webhook'
+        );
+        res.status(401).json({ error: 'Webhook secret not configured' });
+        return;
+      }
+
+      const signature = req.headers['linear-signature'] as string;
+      if (!verifyWebhookSignature(req.body, signature, webhookSecret)) {
+        logger.warn('Invalid webhook signature');
+        res.status(401).json({ error: 'Invalid signature' });
+        return;
       }
 
       try {
         const payload = JSON.parse(req.body.toString()) as LinearWebhookPayload;
+
+        // Replay protection: reject stale webhooks when a timestamp is present.
+        if (
+          typeof payload.webhookTimestamp === 'number' &&
+          Math.abs(Date.now() - payload.webhookTimestamp) > WEBHOOK_MAX_SKEW_MS
+        ) {
+          logger.warn('Rejecting webhook with stale timestamp', {
+            webhookTimestamp: payload.webhookTimestamp,
+          });
+          res.status(401).json({ error: 'Stale webhook timestamp' });
+          return;
+        }
+
         await handleWebhookEvent(payload);
         res.status(200).json({ ok: true });
       } catch (error) {
@@ -74,7 +99,13 @@ function verifyWebhookSignature(body: Buffer, signature: string, secret: string)
   hmac.update(body);
   const expectedSignature = hmac.digest('hex');
 
-  return signature === expectedSignature;
+  // Constant-time comparison to avoid timing attacks; timingSafeEqual requires equal lengths.
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (signatureBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(signatureBuffer, expectedBuffer);
 }
 
 async function handleWebhookEvent(payload: LinearWebhookPayload): Promise<void> {

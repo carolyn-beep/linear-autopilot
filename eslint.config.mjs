@@ -7,7 +7,14 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   prettier,
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'jest.config.ts'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'coverage/**',
+      'jest.config.ts',
+      // Experimental, not-wired-in code, excluded from tsconfig (see src/_experimental/README.md).
+      'src/_experimental/**',
+    ],
   },
   {
     files: ['src/**/*.ts'],
