@@ -9,9 +9,8 @@ const config: Config = {
     'src/**/*.ts',
     '!src/**/*.d.ts',
     '!src/**/index.ts',
-    // Exclude integration modules that depend on external services
-    '!src/coordination/**',
-    '!src/runners/**',
+    // Exclude experimental, not-yet-wired-in work (see src/_experimental/README.md)
+    '!src/_experimental/**',
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],

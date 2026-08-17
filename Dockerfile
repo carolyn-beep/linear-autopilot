@@ -38,6 +38,13 @@ RUN apk add --no-cache github-cli
 # Create data directory for memory/costs
 RUN mkdir -p /app/data
 
+# Create a non-root user and give it ownership of the app directory.
+# All tooling above (npm, git, gh, claude CLI) is installed as root; we only
+# drop privileges for the running process.
+RUN addgroup -S autopilot && adduser -S autopilot -G autopilot \
+  && chown -R autopilot:autopilot /app
+USER autopilot
+
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3000

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { logger } from '../logger';
 import { MEMORY_LIMITS } from '../constants';
+import { redactSecrets } from '../utils/security';
 
 // Error categories for smarter learning
 export type ErrorCategory =
@@ -208,7 +209,9 @@ export function updateMemory(repoPath: string, session: SessionLearnings): void 
 
   // Process errors with categorization
   if (session.errors) {
-    for (const error of session.errors) {
+    for (const rawError of session.errors) {
+      // Redact secrets before anything is written to memory.json.
+      const error = redactSecrets(rawError);
       // Legacy: still add to commonErrors for backwards compatibility
       if (!memory.commonErrors.includes(error)) {
         memory.commonErrors.push(error);
@@ -285,12 +288,14 @@ export function updateMemory(repoPath: string, session: SessionLearnings): void 
   if (session.validationResults) {
     for (const result of session.validationResults) {
       if (!result.passed) {
+        // Redact secrets before validation output is written to memory.json.
+        const redactedOutput = result.output ? redactSecrets(result.output) : result.output;
         const existing = memory.validationHistory.find((vh) => vh.step === result.step);
         if (existing) {
           existing.failureCount++;
           existing.lastFailure = now;
-          if (result.output) {
-            const cause = result.output.slice(0, 200);
+          if (redactedOutput) {
+            const cause = redactedOutput.slice(0, 200);
             if (!existing.commonCauses.includes(cause)) {
               existing.commonCauses.push(cause);
               existing.commonCauses = existing.commonCauses.slice(-5);
@@ -301,7 +306,7 @@ export function updateMemory(repoPath: string, session: SessionLearnings): void 
             step: result.step,
             failureCount: 1,
             lastFailure: now,
-            commonCauses: result.output ? [result.output.slice(0, 200)] : [],
+            commonCauses: redactedOutput ? [redactedOutput.slice(0, 200)] : [],
           });
         }
       }

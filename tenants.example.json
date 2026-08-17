@@ -10,7 +10,38 @@
         {
           "type": "slack",
           "config": {
-            "webhookUrl": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+            "webhookUrl": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+            "channel": "#autopilot-alerts"
+          }
+        },
+        {
+          "type": "email",
+          "config": {
+            "to": "team@example.com",
+            "from": "autopilot@example.com"
+          }
+        }
+      ]
+    },
+    {
+      "name": "another-team",
+      "linearTeamId": "TEAM_ID_HERE",
+      "repoPath": "/absolute/path/to/another/repo",
+      "maxConcurrentAgents": 1,
+      "githubRepo": "your-org/another-repo",
+      "githubToken": "OPTIONAL_PER_TENANT_GITHUB_TOKEN",
+      "linearApiKey": "OPTIONAL_PER_TENANT_LINEAR_API_KEY",
+      "notifications": [
+        {
+          "type": "discord",
+          "config": {
+            "webhookUrl": "https://discord.com/api/webhooks/YOUR/WEBHOOK/URL"
+          }
+        },
+        {
+          "type": "gchat",
+          "config": {
+            "webhookUrl": "https://chat.googleapis.com/v1/spaces/YOUR/messages?key=YOUR_KEY"
           }
         }
       ]

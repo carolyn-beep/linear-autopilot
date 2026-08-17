@@ -7,6 +7,9 @@ import { logger } from '../logger';
 import { createDashboardRouter } from '../dashboard';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
+// Optional bind address. Default (unset) preserves existing behavior (all interfaces)
+// so the Linear webhook stays reachable.
+const HOST = process.env.HOST;
 const POLLING_INTERVAL = parseInt(process.env.LINEAR_POLLING_INTERVAL_MS || '0', 10);
 
 let pollingWatcher: PollingWatcher | null = null;
@@ -30,8 +33,25 @@ export async function startServer(): Promise<void> {
 
   const app = express();
 
-  // Health check endpoint
-  app.get('/health', (_req, res) => {
+  // Health check endpoint. Unauthenticated callers get a minimal response so we
+  // don't leak tenant names, team IDs, or agent limits. Detailed health is gated
+  // behind DASHBOARD_TOKEN (Bearer header or ?token= query).
+  app.get('/health', (req, res) => {
+    const dashboardToken = process.env.DASHBOARD_TOKEN;
+    const authHeader = req.headers['authorization'];
+    const bearer =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.slice('Bearer '.length)
+        : undefined;
+    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+    const authorized =
+      !!dashboardToken && (bearer === dashboardToken || queryToken === dashboardToken);
+
+    if (!authorized) {
+      res.json({ status: 'ok' });
+      return;
+    }
+
     const status = spawner.getStatus();
     res.json({
       status: isShuttingDown ? 'shutting_down' : 'healthy',
@@ -63,15 +83,17 @@ export async function startServer(): Promise<void> {
   }
 
   // Start HTTP server
-  const server = app.listen(PORT, () => {
+  const onListening = () => {
     logger.info('Server listening', {
       port: PORT,
+      host: HOST || '0.0.0.0',
       dashboard: `http://localhost:${PORT}/dashboard`,
       healthEndpoint: `http://localhost:${PORT}/health`,
       webhookEndpoint:
         POLLING_INTERVAL === 0 ? `http://localhost:${PORT}/webhook/linear` : undefined,
     });
-  });
+  };
+  const server = HOST ? app.listen(PORT, HOST, onListening) : app.listen(PORT, onListening);
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
