@@ -57,7 +57,7 @@ Add to `claude_desktop_config.json`
   "mcpServers": {
     "linear-autopilot": {
       "command": "npm",
-      "args": ["run", "mcp"],
+      "args": ["run", "--silent", "mcp"],
       "cwd": "/absolute/path/to/linear-autopilot",
       "env": {
         "AUTOPILOT_API_URL": "http://localhost:3000",
@@ -73,10 +73,11 @@ Add to `claude_desktop_config.json`
 ```bash
 claude mcp add linear-autopilot \
   --env AUTOPILOT_API_URL=http://localhost:3000 \
-  -- npm run mcp
+  -- npm run --silent mcp
 ```
 
-Run the command from the repo root (or point `cwd`/the command at an absolute
-path) so `npm run mcp` resolves. Once connected, ask things like
+`--silent` suppresses npm's run banner, which otherwise prints to stdout and
+corrupts the JSON-RPC stdio channel. Run the command from the repo root (or
+point `cwd`/the command at an absolute path) so the script resolves. Once connected, ask things like
 _"What's in the Autopilot queue?"_ or _"How much have the agents cost so far?"_
 and the client will call the tools above.
