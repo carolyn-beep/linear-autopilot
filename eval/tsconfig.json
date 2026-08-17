@@ -1,0 +1,12 @@
+{
+  "//": "Standalone TS project for the eval harness. Root tsconfig scopes rootDir to src/ and excludes eval/, so ts-node uses this project instead. noEmit: the harness is run via ts-node, never built to dist/.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["**/*.ts", "../src/**/*"]
+}
