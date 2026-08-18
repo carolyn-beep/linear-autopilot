@@ -1,0 +1,5 @@
+# Official Model Context Protocol (MCP) Python SDK.
+# Provides ClientSession, StdioServerParameters, and the stdio_client transport
+# used by client.py. The 2.x line uses snake_case result attributes
+# (server_info, protocol_version, is_error), which this client targets.
+mcp>=2.0.0,<3.0.0

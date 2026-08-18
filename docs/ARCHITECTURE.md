@@ -1,8 +1,8 @@
 # Architecture
 
-This document covers the internals of Linear Autopilot as a platform: the
-orchestration loop, how the system handles agent failure, how the agent's
-context is engineered, and the platform decisions and metrics behind it.
+This document covers the internals of Linear Autopilot: the orchestration loop,
+how the system handles agent failure, how the prompt is built, and the design
+decisions and metrics behind it.
 
 For a task-level guide to adding providers, checks, and runners, see
 [EXTENDING.md](EXTENDING.md). For the MCP integration, see [MCP.md](MCP.md).
@@ -55,18 +55,93 @@ Concretely:
 
 ## Extension points
 
-The loop is fixed; the capabilities plugged into it are not. The extension
+The loop is fixed; the pieces plugged into it are not. The extension
 points, from most to least mature:
 
-| Point                    | Where                            | Shape                                                   | Status                    |
-| ------------------------ | -------------------------------- | ------------------------------------------------------- | ------------------------- |
-| Notification providers   | `src/notifications`              | `NotificationProvider` interface + `providers` record   | Shipped, 6 providers      |
-| Validation checks        | `src/validation/index.ts`        | `ValidationResult`-returning step added to `validate()` | Shipped                   |
-| Notification events      | `src/notifications/types.ts`     | `NotificationEvent` union + event factory               | Shipped                   |
-| Pluggable runners        | `src/_experimental/runners`      | `selectRunner()` returning a `RunnerType`               | Exploratory, not wired in |
-| Multi-agent coordination | `src/_experimental/coordination` | MCP client/manager                                      | Exploratory, not wired in |
+| Point                  | Where                        | Shape                                                   | Status                      |
+| ---------------------- | ---------------------------- | ------------------------------------------------------- | --------------------------- |
+| Notification providers | `src/notifications`          | `NotificationProvider` interface + `providers` record   | Shipped, 6 providers        |
+| Validation checks      | `src/validation/index.ts`    | `ValidationResult`-returning step added to `validate()` | Shipped                     |
+| Notification events    | `src/notifications/types.ts` | `NotificationEvent` union + event factory               | Shipped                     |
+| Runner strategy        | `src/runners`                | `AgentRunner` interface + `createRunner(tenant)`        | Shipped, 2 runners (opt-in) |
+| Agent backend          | `src/runners/backends`       | `AgentBackend` interface + `createBackend(tenant)`      | Shipped, 2 backends         |
 
 See [EXTENDING.md](EXTENDING.md) for the how-to on each.
+
+## Runner abstraction
+
+How a ticket gets implemented sits behind one interface, `AgentRunner`
+(`src/runners/types.ts`), so the spawner can pick a strategy per tenant without
+knowing the details. The spawner calls `createRunner(tenant).run(...)`
+(`src/runners/index.ts`, `src/spawner/index.ts`); everything downstream — the
+validation gate, PR creation, memory — is identical regardless of which runner
+ran. The agent invocation itself is injected (`InvokeAgent`); the runner never
+spawns an agent directly, which keeps runners unit-testable without any CLI. In
+production that injected function comes from the tenant's **agent backend** (see
+below).
+
+Two runners ship:
+
+- **`SingleAgentRunner`** (`src/runners/single-agent-runner.ts`) is the default
+  and is behavior-preserving: one Claude Code process prompted by
+  `buildAutopilotPrompt`, memory injected. A tenant that configures nothing gets
+  exactly the classic path.
+- **`PipelineRunner`** (`src/runners/pipeline-runner.ts`) is opt-in via
+  `runner: 'pipeline'` (`src/config/tenants.ts`). It runs a sequential,
+  role-specialized flow — `planner` → `implementer` → `reviewer` — where only the
+  implementer writes code. The reviewer reads the branch diff and ends with
+  `VERDICT: APPROVE | REQUEST_CHANGES`; on `REQUEST_CHANGES` the implementer runs
+  one fix pass, bounded by `pipelineMaxRevisions` (default 1), and the loop always
+  terminates. Each role reports its own tokens, cost, and duration
+  (`RoleResult`), while the spawner still records one aggregate usage entry per
+  ticket.
+
+Because it is sequential and single-writer, the pipeline sidesteps the
+parallel-editor file-conflict problem; the trade is cost and latency, roughly N×
+the agent calls of a single run. The full reasoning is in
+[ADR-0007](adr/0007-single-agent-vs-pipeline-runner.md).
+
+## Agent backend
+
+Which coding agent actually runs sits behind a second interface, `AgentBackend`
+(`src/runners/backends/types.ts`), one level below the runner. A runner decides
+_how a ticket is worked_ (single vs. pipeline); a backend decides _which agent
+executes each call_. `createBackend(tenant)` (`src/runners/backends/index.ts`)
+maps a tenant's optional `agentBackend` config to a concrete backend, and
+`createRunner` turns that into the runner's injected `InvokeAgent`. This is the
+one real spawn boundary for the coding agent.
+
+Two backends ship:
+
+- **`ClaudeCodeBackend`** (`src/runners/backends/claude-code.ts`) is the default.
+  It is the classic behavior: `spawn('claude', ['-p',
+'--dangerously-skip-permissions', prompt], { env: scrubbedEnv(), cwd })`, plus
+  the Claude token parse and pricing. A tenant that configures nothing gets
+  exactly this.
+- **`CommandBackend`** (`src/runners/backends/command.ts`) runs a configurable
+  CLI (`{ command, args, promptVia? }`). The prompt is either substituted for the
+  `{prompt}` token in `args` (default) or written to the child's stdin. It always
+  spawns shell-free with a scrubbed environment, so there is no injection surface.
+  An arbitrary CLI has no usage/pricing contract, so this backend reports token
+  and cost telemetry as unavailable rather than fabricating it.
+
+Claude Code being the default (not the only option) is recorded in
+[ADR-0009](adr/0009-agent-backend-abstraction.md).
+
+## Scaling
+
+Autopilot is a single node today. The work queue is in memory
+(`src/spawner/queue.ts`), memory / cost / completion state is local JSON, and git
+checkouts are host-bound — so throughput is capped by one host and queued work
+does not survive a restart. Within that node, `maxConcurrentAgents` (per tenant),
+`MAX_RETRIES`, and Linear rate limiting are the vertical levers that provide
+bounded fan-out and backpressure: at capacity the spawner simply leaves work
+queued. Opting a tenant into the pipeline runner multiplies per-ticket agent
+calls, so it reaches the node's ceiling with fewer concurrent tickets. The
+concrete horizontal path — externalize the queue to Postgres/Redis with
+leased/locked jobs, move shared state to a shared store, split the webhook
+receiver from the worker, shard by repo — is recorded in
+[ADR-0008](adr/0008-scaling-model.md).
 
 ## How it handles agent failure (feedback loops)
 
@@ -121,10 +196,10 @@ human in it.
 Memory is bounded (`MEMORY_LIMITS` in `src/constants.ts`; file patterns and
 causes are sliced) so it can't grow without limit or blow the context budget.
 
-## Context engineering
+## How the prompt is built
 
-The agent gets exactly one shot per attempt, so what goes into the prompt is a
-design surface, not an afterthought. Prompt assembly lives in `src/prompts.ts`
+The agent gets exactly one shot per attempt, so what goes into the prompt matters.
+Prompt assembly lives in `src/prompts.ts`
 (`buildAutopilotPrompt`).
 
 **What's included, and why:**
@@ -156,15 +231,19 @@ rules that constrain the agent (branch discipline, no remote push) are called ou
 separately from the task steps so they read as invariants rather than
 suggestions.
 
-## Platform decisions & tradeoffs
+## Design decisions
 
-**Spawn Claude Code vs. build a bespoke agent.** Autopilot shells out to the
-`claude` CLI (`Spawner.runClaudeCode`) rather than embedding a model client and
-managing its own tool loop. The tradeoff: less control over the inner agent loop
-in exchange for inheriting Claude Code's tool use, file editing, and iteration
-for free — and the ability to upgrade the agent by upgrading the CLI. The
-orchestration platform (queueing, validation, memory, notifications, tenancy) is
-the differentiated part and is where the code invests.
+**Shell out to a coding-agent CLI vs. build a bespoke agent.** Autopilot shells
+out to a coding-agent CLI rather than embedding a model client and managing its
+own tool loop. The tradeoff: less control over the inner agent loop in exchange
+for inheriting tool use, file editing, and iteration for free, plus the ability
+to upgrade the agent by upgrading the CLI. The orchestration around the agent
+(queueing, validation, memory, notifications, tenancy) is where the code invests
+its effort. Claude Code is the **default** backend
+(`src/runners/backends/claude-code.ts`); a tenant can point Autopilot at a
+different CLI via `agentBackend` without touching the runner layer
+([ADR-0009](adr/0009-agent-backend-abstraction.md)). Non-Claude backends may
+lack usage/cost telemetry, which is reported as unavailable rather than guessed.
 
 **Validation as a gate, not a suggestion.** The alternative — let the agent
 self-report success and open a PR — is faster but shifts all verification onto
@@ -178,9 +257,9 @@ risk of poisoning future runs with bad "learnings." Autopilot accepts that risk
 repeating the same type errors and know which files to touch — compounds over a
 repo's lifetime.
 
-**Velocity vs. reliability.** Several choices lean reliability: bounded retries
-over infinite retries, a hard validation gate over fast PRs, branch cleanup over
-leaving work in place. The dial is exposed where it matters: `maxConcurrentAgents`
+**Reliability over raw speed.** Several choices lean toward reliability: bounded
+retries over infinite retries, a hard validation gate over fast PRs, branch
+cleanup over leaving work in place. The dial is exposed where it matters: `maxConcurrentAgents`
 per tenant, `COVERAGE_THRESHOLD`, `AGENT_STUCK_THRESHOLD_MS`.
 
 **Provider abstraction over one-offs.** Notifications went through a
@@ -188,14 +267,16 @@ per tenant, `COVERAGE_THRESHOLD`, `AGENT_STUCK_THRESHOLD_MS`.
 `if (type === 'slack')` branches. Six providers exist today; adding a seventh
 touches one file plus a test. See [EXTENDING.md](EXTENDING.md).
 
-**Per-tenant credential scoping.** Optional per-tenant `githubToken` /
-`linearApiKey` (`src/config/tenants.ts`) limit blast radius so one tenant's
-compromised token doesn't reach another tenant's repo.
+**Per-tenant credential scoping.** An optional per-tenant `githubToken`
+(`src/config/tenants.ts`) scopes PR creation to one tenant's token, limiting
+blast radius. Per-tenant Linear keys are a documented next step (see
+[ADR-0005](adr/0005-multi-tenant-credential-model.md)); the Linear client
+currently authenticates with the global key.
 
-## How success is measured
+## Metrics
 
-Some metrics are tracked in code today; others are the targets this platform is
-built to move but does not yet compute. Marked honestly.
+Some metrics are tracked in code today; others are the targets the system is
+meant to move but does not yet compute. Marked honestly.
 
 **Implemented (tracked in code):**
 

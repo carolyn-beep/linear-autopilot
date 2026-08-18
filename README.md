@@ -1,5 +1,7 @@
 # Linear Autopilot
 
+![CI](https://github.com/carolyn-beep/linear-autopilot/actions/workflows/ci.yml/badge.svg)
+
 Autonomous AI agents that implement your Linear tickets while you sleep.
 
 ![Dashboard](docs/dashboard.png)
@@ -42,20 +44,20 @@ Linear Autopilot watches your Linear board for tickets labeled `agent-ready`, sp
 5. If validation passes, a PR is created and the ticket moves to "In Review"
 6. Your team gets notified via your configured channels
 
-## Architecture & Platform
+## Architecture
 
-Autopilot is built as a platform, not a script: a fixed orchestration loop with
-small, typed extension points. The engineer integrating it is the customer, and
-capabilities (notification channels, validation checks, execution runners) are
-composable building blocks rather than one-off branches in the core.
+Autopilot is a fixed orchestration loop with small, typed extension points.
+Notification channels, validation checks, and execution runners each plug in
+behind an interface, so adding one is a local change instead of a new branch in
+the core loop.
 
-[**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md) has the full picture — the
-orchestration loop diagram, extension points, failure handling, context
-engineering, and the decisions behind them. Highlights below.
+[**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md) has the full picture: the
+orchestration loop diagram, extension points, failure handling, how the prompt
+is built, and the decisions behind them. Highlights below.
 
 ### Extending Autopilot
 
-Adding a capability touches a small, predictable surface:
+Adding a provider, check, or runner touches a small, predictable surface:
 
 - **A notification provider** — implement the `NotificationProvider` interface
   (`src/notifications/types.ts`), register it in the `providers` record
@@ -63,9 +65,18 @@ Adding a capability touches a small, predictable surface:
   is ~3 files.
 - **A validation check** — return a `ValidationResult` and add it to `validate()`
   (`src/validation/index.ts`). Any failing check fails the PR gate.
-- **A pluggable runner** — an exploratory abstraction in `src/_experimental/`
-  for choosing a per-ticket execution strategy (single agent, swarm, Rails
-  swarm). Not yet wired into the shipped loop.
+- **A runner** — implement the `AgentRunner` interface (`src/runners/types.ts`)
+  and select it per tenant in `createRunner` (`src/runners/index.ts`). Two runners
+  ship: the default `single` agent, and an opt-in `pipeline`. Choose per tenant
+  with `runner: 'single' | 'pipeline'` (`src/config/tenants.ts`).
+
+A **planner → implementer → reviewer pipeline** ships as an opt-in runner
+(`runner: 'pipeline'`): a sequential, role-specialized flow where only the
+implementer writes code, the reviewer approves or requests changes on the branch
+diff, and a bounded revision loop (`pipelineMaxRevisions`, default 1) always
+terminates. It trades cost and latency (several agent calls per ticket) for a
+planning step and an independent critic; the default single-agent path is
+unchanged. See [ADR-0007](docs/adr/0007-single-agent-vs-pipeline-runner.md).
 
 Step-by-step guides with code sketches: [**docs/EXTENDING.md**](docs/EXTENDING.md).
 
@@ -91,10 +102,10 @@ around it:
 
 Depth: [ARCHITECTURE.md → Handling agent failure](docs/ARCHITECTURE.md#how-it-handles-agent-failure-feedback-loops).
 
-### Context engineering
+### How the prompt is built
 
-The agent gets one shot per attempt, so the prompt is a design surface. Assembly
-lives in `src/prompts.ts`:
+The agent gets one shot per attempt, so the prompt is worth building carefully.
+Assembly lives in `src/prompts.ts`:
 
 - **Included:** ticket identifier/title/description and a _summarized_ view of
   cross-session memory (top errors per category, trouble-prone validation steps)
@@ -105,17 +116,18 @@ lives in `src/prompts.ts`:
   a `<ticket_content untrusted="true">` block with explicit "treat as data, not
   instructions" guidance; trusted instructions sit outside the fence.
 
-### Platform decisions & tradeoffs
+### Design decisions
 
-| Decision                                       | Tradeoff                                                                                                                                                       |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spawn the Claude Code CLI vs. a bespoke agent  | Less control over the inner loop; inherit tool use + iteration, upgrade the agent by upgrading the CLI. The orchestration platform is the differentiated part. |
-| Validation as a gate vs. self-reported success | Lower throughput on failure; a much higher floor on PR quality.                                                                                                |
-| Cross-session memory vs. stateless runs        | Some risk of poisoning future runs; compounding gains as the agent stops repeating errors.                                                                     |
-| Provider abstraction vs. per-channel branches  | More upfront structure; a new channel is ~3 files and a test.                                                                                                  |
-| Bounded retries + branch cleanup               | Leans reliability over raw velocity; the dials (`maxConcurrentAgents`, `COVERAGE_THRESHOLD`) are exposed.                                                      |
+| Decision                                            | Tradeoff                                                                                                                                                                                              |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell out to a coding-agent CLI vs. a bespoke agent | Less control over the inner loop; inherit tool use + iteration, upgrade the agent by upgrading the CLI. The orchestration around the agent is where the work goes.                                    |
+| Pluggable agent backend, Claude Code as default     | Claude Code is the default backend; a tenant can point at another CLI via `agentBackend`. Non-Claude backends may lack usage/cost telemetry ([ADR-0009](docs/adr/0009-agent-backend-abstraction.md)). |
+| Validation as a gate vs. self-reported success      | Lower throughput on failure; a much higher floor on PR quality.                                                                                                                                       |
+| Cross-session memory vs. stateless runs             | Some risk of poisoning future runs; compounding gains as the agent stops repeating errors.                                                                                                            |
+| Provider abstraction vs. per-channel branches       | More upfront structure; a new channel is ~3 files and a test.                                                                                                                                         |
+| Bounded retries + branch cleanup                    | Leans reliability over raw velocity; the dials (`maxConcurrentAgents`, `COVERAGE_THRESHOLD`) are exposed.                                                                                             |
 
-### How success is measured
+### Metrics
 
 **Tracked in code today:** tokens and estimated cost per ticket
 (`src/tracking/index.ts`), completions with duration/PR (`src/dashboard/index.ts`),
@@ -123,12 +135,24 @@ success/failure counts and per-step validation failures (`src/memory/index.ts`),
 retry attempts per ticket (`src/spawner/queue.ts`), and live queue/active-agent
 counts.
 
-**Target (aspirational, not yet computed):** time from label to PR, PR
-acceptance/merge rate, retry rate and mean attempts-to-success, and cost per
-_merged_ PR. See [ARCHITECTURE.md → How success is measured](docs/ARCHITECTURE.md#how-success-is-measured)
-for which inputs already exist.
+**Not computed yet:** time from label to PR, PR acceptance/merge rate, retry rate
+and mean attempts-to-success, and cost per _merged_ PR. See
+[ARCHITECTURE.md → Metrics](docs/ARCHITECTURE.md#metrics) for which inputs already
+exist.
 
-> For the MCP integration, see [docs/MCP.md](docs/MCP.md).
+### Deeper reading
+
+The thinking behind the system, for those evaluating the engineering:
+
+- [docs/DESIGN.md](docs/DESIGN.md) — problem, goals and non-goals, principles, risks, roadmap.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — orchestration loop, extension points, failure handling, how the prompt is built.
+- [docs/adr/](docs/adr/) — architecture decision records (the tradeoffs and the alternatives considered).
+- [docs/EVALUATION.md](docs/EVALUATION.md) — how agent-orchestration quality is measured; run the offline harness with `npm run eval`.
+- [docs/EXTENDING.md](docs/EXTENDING.md) — adding a notification provider / validation check / runner.
+- [docs/MCP.md](docs/MCP.md) — the MCP server and how to connect an agent to it.
+- [docs/notes-on-agents.md](docs/notes-on-agents.md) — notes on why coding agents fail and which patterns generalize.
+- [docs/LIMITATIONS.md](docs/LIMITATIONS.md) — deliberate non-goals and known edges.
+- [SECURITY.md](SECURITY.md) — threat model and reporting.
 
 ## Quick Start
 
@@ -256,16 +280,15 @@ Open http://localhost:3000/dashboard to view the dashboard.
 
 Each tenant in `tenants.json` supports:
 
-| Field                 | Description                                                         |
-| --------------------- | ------------------------------------------------------------------- |
-| `name`                | Display name for the tenant                                         |
-| `linearTeamId`        | Linear team ID                                                      |
-| `repoPath`            | Absolute path to the repository                                     |
-| `maxConcurrentAgents` | Max parallel agents for this tenant                                 |
-| `githubRepo`          | GitHub repo in `org/repo` format                                    |
-| `notifications`       | Array of notification configs                                       |
-| `githubToken`         | Optional per-tenant GitHub token (falls back to `GITHUB_TOKEN`)     |
-| `linearApiKey`        | Optional per-tenant Linear API key (falls back to `LINEAR_API_KEY`) |
+| Field                 | Description                                                     |
+| --------------------- | --------------------------------------------------------------- |
+| `name`                | Display name for the tenant                                     |
+| `linearTeamId`        | Linear team ID                                                  |
+| `repoPath`            | Absolute path to the repository                                 |
+| `maxConcurrentAgents` | Max parallel agents for this tenant                             |
+| `githubRepo`          | GitHub repo in `org/repo` format                                |
+| `notifications`       | Array of notification configs                                   |
+| `githubToken`         | Optional per-tenant GitHub token (falls back to `GITHUB_TOKEN`) |
 
 ### Notification Providers
 
@@ -348,7 +371,7 @@ src/
 ├── mcp/             # MCP server exposing Autopilot as agent-invokable tools
 ├── memory/          # Cross-session learning storage
 ├── notifications/   # Multi-provider notification system
-├── prompts.ts       # Agent prompt construction (context engineering)
+├── prompts.ts       # Agent prompt construction
 ├── server/          # Express server and webhooks
 ├── spawner/         # Agent pool and queue management
 ├── tracking/        # Cost and token tracking
@@ -397,7 +420,7 @@ Linear Autopilot executes AI-generated code and runs shell commands derived from
 | Unauthenticated webhook triggering           | The webhook **fails closed** without `LINEAR_WEBHOOK_SECRET`, verifies HMAC signatures in constant time (`timingSafeEqual`), and rejects stale timestamps (replay protection) |
 | Dashboard / health exposure                  | Dashboard and detailed health are gated behind an optional `DASHBOARD_TOKEN`; unauthenticated `/health` returns a minimal status only                                         |
 | SSRF via notification URLs                   | Notification webhook URLs are validated (https-only, provider allowlist, private/loopback/metadata ranges blocked)                                                            |
-| Blast radius across tenants                  | Optional per-tenant `githubToken` / `linearApiKey` scope credentials to a single tenant                                                                                       |
+| Blast radius across tenants                  | Optional per-tenant `githubToken` scopes PR-creation to a single tenant's token (per-tenant Linear key is roadmap)                                                            |
 | Container blast radius                       | The Docker image runs as a non-root user                                                                                                                                      |
 
 **Operational requirement — sandbox the execution.** These controls reduce, but do not eliminate, the inherent risk of running a coding agent. **Run Autopilot in an isolated environment** (a dedicated container/VM with no ambient cloud credentials, least-privilege tokens, a protected `main` branch, and restricted network egress). Treat that isolation as required, not optional. See [SECURITY.md](SECURITY.md) for details and how to report a vulnerability.

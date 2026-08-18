@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { logger } from '../logger';
+import type { AgentBackendConfig } from '../runners/backends/types';
 
 export type NotificationType = 'email' | 'slack' | 'discord' | 'sms' | 'whatsapp' | 'gchat';
 
@@ -22,10 +23,46 @@ export interface TenantConfig {
    */
   githubToken?: string;
   /**
-   * Optional per-tenant Linear API key. Falls back to the global
-   * `LINEAR_API_KEY` environment variable when omitted.
+   * Which runner strategy to use for this tenant. `'single'` (the default) runs
+   * one Claude Code agent per ticket — the classic behavior. `'pipeline'` runs
+   * the sequential planner -> implementer -> reviewer pipeline.
    */
-  linearApiKey?: string;
+  runner?: 'single' | 'pipeline';
+  /**
+   * Max reviewer-driven revision passes for the pipeline runner. Defaults to 1.
+   * The pipeline always terminates at this cap. Ignored by the single runner.
+   */
+  pipelineMaxRevisions?: number;
+  /**
+   * Which coding-agent backend implements tickets for this tenant. Omitted (the
+   * default) means Claude Code, so an existing config keeps the classic behavior
+   * exactly. Set `{ type: 'command', ... }` to run a different coding-agent CLI:
+   *
+   * ```jsonc
+   * // Claude Code (explicit form of the default)
+   * "agentBackend": { "type": "claude-code" }
+   *
+   * // A generic CLI, prompt substituted for the {prompt} argv token (default)
+   * "agentBackend": {
+   *   "type": "command",
+   *   "command": "my-agent",
+   *   "args": ["run", "--task", "{prompt}"]
+   * }
+   *
+   * // A generic CLI that reads the prompt from stdin
+   * "agentBackend": {
+   *   "type": "command",
+   *   "command": "my-agent",
+   *   "args": ["run"],
+   *   "promptVia": "stdin"
+   * }
+   * ```
+   *
+   * The command is always spawned shell-free with a scrubbed environment. Note
+   * that non-Claude backends may not emit parseable token usage, in which case
+   * per-role cost telemetry is reported as unavailable rather than fabricated.
+   */
+  agentBackend?: AgentBackendConfig;
 }
 
 interface TenantsFile {

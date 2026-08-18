@@ -30,7 +30,6 @@
       "maxConcurrentAgents": 1,
       "githubRepo": "your-org/another-repo",
       "githubToken": "OPTIONAL_PER_TENANT_GITHUB_TOKEN",
-      "linearApiKey": "OPTIONAL_PER_TENANT_LINEAR_API_KEY",
       "notifications": [
         {
           "type": "discord",

@@ -2,6 +2,8 @@
   "name": "linear-autopilot",
   "version": "1.0.0",
   "description": "Autonomous agents that work your Linear tickets while you sleep.",
+  "author": "Carolyn Driscoll",
+  "license": "MIT",
   "main": "dist/server/index.js",
   "engines": {
     "node": ">=20.0.0"
@@ -13,6 +15,7 @@
     "watch": "LINEAR_POLLING_INTERVAL_MS=30000 ts-node src/server/index.ts",
     "dev": "tsx watch src/index.ts",
     "runner": "ts-node src/runner.ts",
+    "eval": "LOG_LEVEL=error ts-node --project eval/tsconfig.json eval/runner.ts",
     "mcp": "ts-node src/mcp/server.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
